@@ -28,23 +28,45 @@ object AppManager {
 
     fun setListFrozen(frozen: Boolean, vararg appInfo: AppInfo): String? {
         val excludeMe = appInfo.filter { it.packageName != BuildConfig.APPLICATION_ID }
+        if (HailData.workingMode.startsWith(HailData.SU)) {
+            return setSuListFrozen(frozen, excludeMe)
+        }
         var i = 0
         var denied = false
         var name = String()
-        when (HailData.workingMode) {
-            // call setListFrozen for some batch-style working mode here
-            // fallback to setAppFrozen otherwise
-            else -> {
-                excludeMe.forEach {
-                    when {
-                        setAppFrozen(it.packageName, frozen) -> {
-                            i++
-                            name = it.name.toString()
-                        }
-
-                        it.applicationInfo != null -> denied = true
-                    }
+        excludeMe.forEach {
+            when {
+                setAppFrozen(it.packageName, frozen) -> {
+                    i++
+                    name = it.name.toString()
                 }
+
+                it.applicationInfo != null -> denied = true
+            }
+        }
+        return if (denied && i == 0) null else if (i == 1) name else i.toString()
+    }
+
+    private fun setSuListFrozen(frozen: Boolean, appInfo: List<AppInfo>): String? {
+        val packageNames = appInfo.map { it.packageName }
+        val success = when (HailData.workingMode) {
+            HailData.MODE_SU_STOP -> if (frozen) HShell.forceStopApps(packageNames) else packageNames.toSet()
+            HailData.MODE_SU_DISABLE -> HShell.setAppsDisabled(packageNames, frozen)
+            HailData.MODE_SU_HIDE -> HShell.setAppsHidden(packageNames, frozen)
+            HailData.MODE_SU_SUSPEND -> HShell.setAppsSuspended(packageNames, frozen)
+            else -> emptySet()
+        }
+        var i = 0
+        var denied = false
+        var name = String()
+        appInfo.forEach {
+            when {
+                it.packageName in success -> {
+                    i++
+                    name = it.name.toString()
+                }
+
+                it.applicationInfo != null -> denied = true
             }
         }
         return if (denied && i == 0) null else if (i == 1) name else i.toString()

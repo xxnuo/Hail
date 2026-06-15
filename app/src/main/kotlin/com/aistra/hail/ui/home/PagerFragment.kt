@@ -280,8 +280,9 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 7 -> exportToClipboard(listOf(info))
                 8 -> removeCheckedApp(pkg)
                 9 -> {
-                    setListFrozen(false, listOf(info), false)
-                    if (!AppManager.isAppFrozen(pkg)) removeCheckedApp(pkg)
+                    setListFrozen(false, listOf(info), false) {
+                        if (!AppManager.isAppFrozen(pkg)) removeCheckedApp(pkg)
+                    }
                 }
             }
         }.setNeutralButton(R.string.action_details) { _, _ ->
@@ -339,13 +340,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         ) { _, which ->
             when (which) {
                 0 -> {
-                    setListFrozen(true, selectedList, false)
-                    deselect()
+                    setListFrozen(true, selectedList, false) { deselect() }
                 }
 
                 1 -> {
-                    setListFrozen(false, selectedList, false)
-                    deselect()
+                    setListFrozen(false, selectedList, false) { deselect() }
                 }
 
                 2 -> triStateTagDialog()
@@ -362,12 +361,14 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
 
                 5 -> {
-                    setListFrozen(false, selectedList, false)
-                    selectedList.forEach {
-                        if (!AppManager.isAppFrozen(it.packageName)) removeCheckedApp(it.packageName, false)
+                    val selected = selectedList.toList()
+                    setListFrozen(false, selected, false) {
+                        selected.forEach {
+                            if (!AppManager.isAppFrozen(it.packageName)) removeCheckedApp(it.packageName, false)
+                        }
+                        HailData.saveApps()
+                        deselect()
                     }
-                    HailData.saveApps()
-                    deselect()
                 }
             }
         }.setNegativeButton(R.string.action_deselect) { _, _ ->
@@ -456,7 +457,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun setListFrozen(
-        frozen: Boolean, list: List<AppInfo> = HailData.checkedList, updateList: Boolean = true
+        frozen: Boolean,
+        list: List<AppInfo> = HailData.checkedList,
+        updateList: Boolean = true,
+        onDone: (() -> Unit)? = null
     ) {
         if (HailData.workingMode == HailData.MODE_DEFAULT) {
             MaterialAlertDialogBuilder(activity).setMessage(R.string.msg_guide)
@@ -471,15 +475,22 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
             }
         }
-        val filtered = list.filter { AppManager.isAppFrozen(it.packageName) != frozen }
-        when (val result = AppManager.setListFrozen(frozen, *filtered.toTypedArray())) {
-            null -> HUI.showToast(R.string.permission_denied)
-            else -> {
-                if (updateList) updateCurrentList()
-                HUI.showToast(
-                    if (frozen) R.string.msg_freeze else R.string.msg_unfreeze, result
-                )
+        val targetList = list.toList()
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val filtered = targetList.filter { AppManager.isAppFrozen(it.packageName) != frozen }
+                AppManager.setListFrozen(frozen, *filtered.toTypedArray())
             }
+            when (result) {
+                null -> HUI.showToast(R.string.permission_denied)
+                else -> {
+                    if (updateList) updateCurrentList()
+                    HUI.showToast(
+                        if (frozen) R.string.msg_freeze else R.string.msg_unfreeze, result
+                    )
+                }
+            }
+            onDone?.invoke()
         }
     }
 
