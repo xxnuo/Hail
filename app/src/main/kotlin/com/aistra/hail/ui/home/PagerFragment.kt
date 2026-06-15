@@ -59,6 +59,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private val binding get() = _binding!!
     private lateinit var pagerAdapter: PagerAdapter
     private var fastScrollPositions: Map<Char, Int> = emptyMap()
+    private var pendingCurrentListUpdate = false
     private var multiselect: Boolean
         set(value) {
             (parentFragment as HomeFragment).multiselect = value
@@ -89,8 +90,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
                     when (newState) {
-                        RecyclerView.SCROLL_STATE_IDLE -> activity.fab.run {
-                            postDelayed({ if (tag == true) show() }, 1000)
+                        RecyclerView.SCROLL_STATE_IDLE -> {
+                            consumePendingCurrentListUpdate()
+                            activity.fab.run {
+                                postDelayed({ if (tag == true) show() }, 1000)
+                            }
                         }
 
                         RecyclerView.SCROLL_STATE_DRAGGING -> activity.fab.hide()
@@ -114,6 +118,28 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
         }
         return binding.root
+    }
+
+    private fun requestCurrentListUpdate() {
+        val recyclerView = _binding?.recyclerView ?: return
+        if (recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE && !recyclerView.isComputingLayout) {
+            recyclerView.post {
+                if (_binding != null) updateCurrentList()
+            }
+        } else {
+            pendingCurrentListUpdate = true
+        }
+    }
+
+    private fun consumePendingCurrentListUpdate() {
+        if (!pendingCurrentListUpdate) return
+        val recyclerView = _binding?.recyclerView ?: return
+        if (recyclerView.isComputingLayout) {
+            recyclerView.post { consumePendingCurrentListUpdate() }
+            return
+        }
+        pendingCurrentListUpdate = false
+        updateCurrentList()
     }
 
     override fun onResume() {
@@ -477,14 +503,19 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
         val targetList = list.toList()
         viewLifecycleOwner.lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                val filtered = targetList.filter { AppManager.isAppFrozen(it.packageName) != frozen }
-                AppManager.setListFrozen(frozen, *filtered.toTypedArray())
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val filtered = targetList.filter { AppManager.isAppFrozen(it.packageName) != frozen }
+                    AppManager.setListFrozen(frozen, *filtered.toTypedArray())
+                }
+            }.getOrElse {
+                HLog.e(it)
+                null
             }
             when (result) {
                 null -> HUI.showToast(R.string.permission_denied)
                 else -> {
-                    if (updateList) updateCurrentList()
+                    if (updateList) requestCurrentListUpdate()
                     HUI.showToast(
                         if (frozen) R.string.msg_freeze else R.string.msg_unfreeze, result
                     )

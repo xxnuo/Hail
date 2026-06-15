@@ -7,13 +7,20 @@ object HShell {
     private const val BATCH_STATUS_PREFIX = "__HAIL_STATUS__"
 
     fun execute(command: String, root: Boolean): Pair<Int, String?> = runCatching {
-        Runtime.getRuntime().exec(if (root) "su" else "sh").run {
+        ProcessBuilder(if (root) "su" else "sh").redirectErrorStream(true).start().run {
+            val output = StringBuffer()
+            val reader = Thread {
+                inputStream.bufferedReader().use {
+                    output.append(it.readText())
+                }
+            }.also { it.start() }
             outputStream.use {
                 it.write(command.toByteArray())
             }
-            waitFor() to (if (inputStream.available() > 0) inputStream else errorStream).use {
-                it.bufferedReader().readText()
-            }.also { destroy() }
+            waitFor().also {
+                reader.join()
+                destroy()
+            } to output.toString()
         }
     }.getOrElse { 1 to it.stackTraceToString() }
 
