@@ -25,6 +25,7 @@ class AlphabetFastScroller : View {
     private var dispatchedLetter: Char? = null
 
     var onLetterSelected: ((Char) -> Unit)? = null
+    var onLetterCleared: (() -> Unit)? = null
 
     constructor(context: Context) : super(context)
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
@@ -92,6 +93,7 @@ class AlphabetFastScroller : View {
                 selectedLetter = null
                 dispatchedLetter = null
                 parent.requestDisallowInterceptTouchEvent(false)
+                onLetterCleared?.invoke()
                 invalidate()
                 if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
                 return true
@@ -116,6 +118,9 @@ class AlphabetFastScroller : View {
         if (letter in availableLetters && dispatchedLetter != letter) {
             dispatchedLetter = letter
             onLetterSelected?.invoke(letter)
+        } else if (letter !in availableLetters && dispatchedLetter != null) {
+            dispatchedLetter = null
+            onLetterCleared?.invoke()
         }
     }
 

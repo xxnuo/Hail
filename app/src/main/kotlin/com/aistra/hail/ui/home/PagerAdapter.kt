@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.aistra.hail.R
 import com.aistra.hail.app.AppInfo
 import com.aistra.hail.app.HailData
+import com.aistra.hail.utils.AlphabetIndex
 import com.aistra.hail.utils.AppIconCache
 import com.aistra.hail.utils.HPackages.myUserId
 import com.google.android.material.color.MaterialColors
@@ -22,6 +23,7 @@ class PagerAdapter(
     private val flags: MutableMap<String, Int> = mutableMapOf()
 ) : ListAdapter<AppInfo, PagerAdapter.ViewHolder>(HomeDiff(selectedList, flags)) {
     private var loadIconJob: Job? = null
+    private var activeLetter: Char? = null
     lateinit var onItemClickListener: OnItemClickListener
     lateinit var onItemLongClickListener: OnItemLongClickListener
 
@@ -33,6 +35,9 @@ class PagerAdapter(
         val info = currentList[position]
         flags[info.packageName] = info.getFlag(selectedList)
         holder.itemView.run {
+            alpha = activeLetter?.let {
+                if (AlphabetIndex.startsWithLetter(info.name, it)) 1f else 0.28f
+            } ?: 1f
             setOnClickListener { onItemClickListener.onItemClick(info) }
             setOnLongClickListener { onItemLongClickListener.onItemLongClick(info) }
             findViewById<ImageView>(R.id.app_icon).run {
@@ -70,6 +75,12 @@ class PagerAdapter(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, HailData.homeFontSize)
             }
         }
+    }
+
+    fun setActiveLetter(letter: Char?) {
+        if (activeLetter == letter) return
+        activeLetter = letter
+        notifyDataSetChanged()
     }
 
     fun onDestroy() {

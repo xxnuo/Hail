@@ -110,6 +110,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
         binding.fastScroller.apply {
             onLetterSelected = ::scrollToLetter
+            onLetterCleared = { pagerAdapter.setActiveLetter(null) }
             applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
         }
         return binding.root
@@ -149,17 +150,33 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     private fun updateFastScroller(list: List<AppInfo>) {
         val positions = mutableMapOf<Char, Int>()
-        list.forEachIndexed { index, info ->
-            AlphabetIndex.firstLetters(info.name.toString()).forEach { letter ->
-                positions.putIfAbsent(letter, index)
-            }
+        val letters = list.map { AlphabetIndex.primaryLetter(it.name) }
+        val spanCount = (binding.recyclerView.layoutManager as? GridLayoutManager)?.spanCount ?: 1
+        letters.forEachIndexed { index, letter ->
+            letter ?: return@forEachIndexed
+            if (letter in positions) return@forEachIndexed
+            positions[letter] = findFastScrollPosition(letters, letter, index, spanCount)
         }
         fastScrollPositions = positions
         binding.fastScroller.setAvailableLetters(positions.keys)
     }
 
+    private fun findFastScrollPosition(
+        letters: List<Char?>,
+        letter: Char,
+        firstPosition: Int,
+        spanCount: Int
+    ): Int {
+        val firstRowStart = firstPosition - firstPosition % spanCount
+        if (letters.getOrNull(firstRowStart) == letter) return firstRowStart
+        var position = firstRowStart + spanCount
+        while (position < letters.size && letters[position] == letter) return position
+        return firstPosition
+    }
+
     private fun scrollToLetter(letter: Char) {
         val position = fastScrollPositions[letter] ?: return
+        pagerAdapter.setActiveLetter(letter)
         (binding.recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, 0)
         activity.fab.hide()
     }
