@@ -58,6 +58,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private var _binding: FragmentPagerBinding? = null
     private val binding get() = _binding!!
     private lateinit var pagerAdapter: PagerAdapter
+    private var fastScrollPositions: Map<Char, Int> = emptyMap()
     private var multiselect: Boolean
         set(value) {
             (parentFragment as HomeFragment).multiselect = value
@@ -107,6 +108,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
             applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true) }
         }
+        binding.fastScroller.apply {
+            onLetterSelected = ::scrollToLetter
+            applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
+        }
         return binding.root
     }
 
@@ -138,7 +143,25 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }.sortedWith(NameComparator).let {
         binding.empty.isVisible = it.isEmpty()
         pagerAdapter.submitList(it)
+        updateFastScroller(it)
         app.setAutoFreezeService()
+    }
+
+    private fun updateFastScroller(list: List<AppInfo>) {
+        val positions = mutableMapOf<Char, Int>()
+        list.forEachIndexed { index, info ->
+            AlphabetIndex.firstLetters(info.name.toString()).forEach { letter ->
+                positions.putIfAbsent(letter, index)
+            }
+        }
+        fastScrollPositions = positions
+        binding.fastScroller.setAvailableLetters(positions.keys)
+    }
+
+    private fun scrollToLetter(letter: Char) {
+        val position = fastScrollPositions[letter] ?: return
+        (binding.recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, 0)
+        activity.fab.hide()
     }
 
     private fun updateBarTitle() {
