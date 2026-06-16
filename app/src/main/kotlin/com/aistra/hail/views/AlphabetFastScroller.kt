@@ -40,7 +40,7 @@ class AlphabetFastScroller : View {
     private var fadeAnimator: ValueAnimator? = null
     private var placement = Placement.END
 
-    var onLetterSelected: ((Char) -> Unit)? = null
+    var onLetterSelected: ((Char, Float) -> Unit)? = null
     var onLetterCleared: (() -> Unit)? = null
 
     constructor(context: Context) : super(context)
@@ -203,6 +203,11 @@ class AlphabetFastScroller : View {
     private fun updateSelectedLetter(eventY: Float) {
         val length = max(if (placement == Placement.BOTTOM) width else height, 1)
         val position = if (placement == Placement.BOTTOM) lastTouchX else eventY
+        val anchorFraction = if (placement == Placement.BOTTOM) {
+            0.78f
+        } else {
+            (position.coerceIn(0f, length - 1f) / length).coerceIn(0f, 1f)
+        }
         touchProgress = ((position.coerceIn(0f, length - 1f) / length) * letters.size)
             .coerceIn(0f, letters.lastIndex.toFloat())
         val index = touchProgress.toInt().coerceIn(0, letters.lastIndex)
@@ -214,7 +219,7 @@ class AlphabetFastScroller : View {
         if (letter in availableLetters && dispatchedLetter != letter) {
             dispatchedLetter = letter
             performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            onLetterSelected?.invoke(letter)
+            onLetterSelected?.invoke(letter, anchorFraction)
         } else if (letter !in availableLetters && dispatchedLetter != null) {
             dispatchedLetter = null
             onLetterCleared?.invoke()

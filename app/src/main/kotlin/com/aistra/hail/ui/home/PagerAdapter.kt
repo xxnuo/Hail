@@ -104,9 +104,9 @@ class PagerAdapter(
         val name = info.name
         holder.name = name
         flags[info.packageName] = info.getFlag(selectedList, state)
-        holder.itemView.run {
-            alpha = activeLetter?.let {
-                if (entry.primaryLetter == it) 1f else 0.28f
+            holder.itemView.run {
+                alpha = activeLetter?.let {
+                if (entry.matchesActiveLetter(it)) 1f else 0.28f
             } ?: 1f
             setOnClickListener { onItemClickListener.onItemClick(info) }
             setOnLongClickListener { onItemLongClickListener.onItemLongClick(info) }
@@ -152,6 +152,18 @@ class PagerAdapter(
         it is Item.Header || it is Item.TailSpacer
     }
 
+    fun isAppPosition(position: Int): Boolean = currentList.getOrNull(position) is Item.App
+
+    fun firstTailSpacerPosition(): Int = currentList.indexOfFirst { it is Item.TailSpacer }
+
+    fun firstUnletteredAppPosition(): Int =
+        currentList.indexOfFirst { it is Item.App && it.entry.primaryLetter == null }
+
+    fun lastSectionStartPosition(): Int =
+        listOf(sectionPositions.values.maxOrNull(), firstUnletteredAppPosition().takeIf { it != -1 })
+            .filterNotNull()
+            .maxOrNull() ?: currentList.indexOfLast { it is Item.App || it is Item.Header }
+
     fun setActiveLetter(letter: Char?) {
         if (activeLetter == letter) return
         activeLetter = letter
@@ -187,12 +199,12 @@ class PagerAdapter(
             if (letter != currentLetter) {
                 currentLetter = letter
                 if (letter != null) {
+                    positions.putIfAbsent(letter, items.size)
                     items.add(Item.Header(letter))
                     spanCursor = 0
                 }
             }
             entry.sectionStartPosition = items.size
-            if (letter != null) positions.putIfAbsent(letter, entry.sectionStartPosition)
             items.add(Item.App(entry))
             spanCursor = (spanCursor + 1) % safeSpanCount
         }
@@ -202,7 +214,7 @@ class PagerAdapter(
                     items.add(Item.Spacer("tail-align-$it"))
                 }
             }
-            repeat(tailSpacerRows.coerceAtLeast(1) * safeSpanCount) {
+            repeat(tailSpacerRows.coerceAtLeast(1)) {
                 items.add(Item.TailSpacer("tail-$it"))
             }
         }
@@ -277,7 +289,10 @@ class PagerAdapter(
         val primaryLetter: Char?,
         val sortKey: String,
         var sectionStartPosition: Int = RecyclerView.NO_POSITION
-    )
+    ) {
+        fun matchesActiveLetter(letter: Char): Boolean =
+            if (letter == '#') primaryLetter == null else primaryLetter == letter
+    }
 
     sealed interface Item {
         data class App(val entry: AppEntry) : Item

@@ -9,5 +9,5 @@
     <dimen name="padding_large">24dp</dimen>
     <dimen name="fast_scroller_extent">48dp</dimen>
     <dimen name="home_section_header_min_height">72dp</dimen>
-    <dimen name="letter_picker_cell_size">48dp</dimen>
+    <dimen name="letter_picker_cell_size">76dp</dimen>
 </resources>

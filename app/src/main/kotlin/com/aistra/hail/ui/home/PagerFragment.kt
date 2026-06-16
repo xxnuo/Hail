@@ -1,13 +1,20 @@
 package com.aistra.hail.ui.home
 
+import android.app.Dialog
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
 import android.util.TypedValue
 import android.view.*
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.GridLayout
-import android.widget.TextView
+import android.widget.GridLayout.CENTER
+import android.widget.GridLayout.spec
+import android.widget.ScrollView
 import androidx.appcompat.widget.SearchView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,6 +32,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.MenuHost
 import androidx.core.view.MenuProvider
 import androidx.core.view.isVisible
@@ -48,6 +56,7 @@ import com.aistra.hail.ui.theme.AppTheme
 import com.aistra.hail.utils.*
 import com.aistra.hail.views.AlphabetFastScroller
 import com.aistra.hail.work.HWork
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -57,6 +66,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.text.Collator
+import kotlin.math.roundToInt
 
 class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAdapter.OnItemLongClickListener,
     MenuProvider {
@@ -106,6 +116,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     when (newState) {
                         RecyclerView.SCROLL_STATE_IDLE -> {
                             consumePendingCurrentListUpdate()
+                            reboundFromTailSpacer()
                             hideFastScrollers()
                             activity.fab.run {
                                 postDelayed({ if (tag == true) show() }, 1000)
@@ -232,66 +243,164 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun scrollToLetter(letter: Char) {
-        val position = fastScrollPositions[letter] ?: return
+        val position = if (letter == '#') pagerAdapter.firstUnletteredAppPosition() else fastScrollPositions[letter]
+        if (position == null || position == RecyclerView.NO_POSITION) return
         pagerAdapter.setActiveLetter(letter)
         (binding.recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, 0)
         activity.fab.hide()
     }
 
+    private fun scrollToLetterNearTouch(letter: Char, anchorFraction: Float) {
+        val position = fastScrollPositions[letter] ?: return
+        val recyclerView = binding.recyclerView
+        val rowHeight = estimatedAppRowHeight()
+        val anchorY = (recyclerView.height * anchorFraction).roundToInt()
+        val minOffset = recyclerView.paddingTop
+        val maxOffset = (recyclerView.height - recyclerView.paddingBottom - rowHeight).coerceAtLeast(minOffset)
+        val offset = (anchorY - rowHeight).coerceIn(minOffset, maxOffset)
+        pagerAdapter.setActiveLetter(letter)
+        (recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, offset)
+        activity.fab.hide()
+    }
+
+    private fun estimatedAppRowHeight(): Int {
+        val recyclerView = binding.recyclerView
+        for (index in 0 until recyclerView.childCount) {
+            val child = recyclerView.getChildAt(index)
+            val position = recyclerView.getChildAdapterPosition(child)
+            if (pagerAdapter.isAppPosition(position) && child.height > 0) {
+                return child.height
+            }
+        }
+        return resources.getDimensionPixelSize(R.dimen.app_icon_size) +
+                resources.getDimensionPixelSize(R.dimen.padding_large) +
+                resources.getDimensionPixelSize(R.dimen.padding_small)
+    }
+
+    private fun reboundFromTailSpacer() {
+        val layoutManager = binding.recyclerView.layoutManager as? GridLayoutManager ?: return
+        val tailPosition = pagerAdapter.firstTailSpacerPosition()
+        if (tailPosition == RecyclerView.NO_POSITION) return
+        val lastSectionPosition = pagerAdapter.lastSectionStartPosition()
+        if (lastSectionPosition == RecyclerView.NO_POSITION) return
+        if (layoutManager.findFirstVisibleItemPosition() >= tailPosition) {
+            binding.recyclerView.smoothScrollToPosition(lastSectionPosition)
+        }
+    }
+
     private fun showLetterPicker(currentLetter: Char) {
         val available = fastScrollPositions.keys
-        val dialog = MaterialAlertDialogBuilder(requireActivity()).create()
+        val hasUnlettered = pagerAdapter.firstUnletteredAppPosition() != RecyclerView.NO_POSITION
+        val dialog = Dialog(requireActivity(), R.style.Theme_Hail_Translucent)
+        val content = FrameLayout(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            setBackgroundColor(
+                ColorUtils.setAlphaComponent(
+                    MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface),
+                    230
+                )
+            )
+            alpha = 0f
+            setOnClickListener { dialog.dismiss() }
+        }
+        val scroll = ScrollView(requireContext()).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isVerticalScrollBarEnabled = false
+            setOnClickListener { dialog.dismiss() }
+        }
         val grid = GridLayout(requireContext()).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply {
+                marginStart = resources.getDimensionPixelSize(R.dimen.padding_large)
+                marginEnd = resources.getDimensionPixelSize(R.dimen.padding_large)
+                topMargin = resources.getDimensionPixelSize(R.dimen.padding_large)
+                bottomMargin = resources.getDimensionPixelSize(R.dimen.padding_large)
+            }
             columnCount = 4
+            useDefaultMargins = false
+            clipToPadding = false
             setPadding(
                 resources.getDimensionPixelSize(R.dimen.padding_medium),
+                resources.getDimensionPixelSize(R.dimen.padding_large),
                 resources.getDimensionPixelSize(R.dimen.padding_medium),
-                resources.getDimensionPixelSize(R.dimen.padding_medium),
-                resources.getDimensionPixelSize(R.dimen.padding_medium)
+                resources.getDimensionPixelSize(R.dimen.padding_large)
             )
         }
-        ('A'..'Z').forEach { letter ->
-            grid.addView(TextView(requireContext()).apply {
-                val cellSize = resources.getDimensionPixelSize(R.dimen.letter_picker_cell_size)
-                layoutParams = GridLayout.LayoutParams().apply {
-                    width = cellSize
-                    height = cellSize
+        fun addCell(label: String, enabled: Boolean, selected: Boolean = false, onClick: (() -> Unit)? = null) {
+            grid.addView(MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                layoutParams = GridLayout.LayoutParams(spec(GridLayout.UNDEFINED, 1f), spec(GridLayout.UNDEFINED, 1f)).apply {
+                    width = 0
+                    height = resources.getDimensionPixelSize(R.dimen.letter_picker_cell_size)
+                    rowSpec = spec(GridLayout.UNDEFINED, CENTER)
+                    columnSpec = spec(GridLayout.UNDEFINED, CENTER, 1f)
+                    setMargins(
+                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
+                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
+                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
+                        resources.getDimensionPixelSize(R.dimen.padding_extra_small)
+                    )
                 }
-                gravity = Gravity.CENTER
-                text = letter.toString()
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+                text = label
+                isAllCaps = false
+                isEnabled = enabled
+                isClickable = enabled
+                isFocusable = enabled
+                strokeWidth = 0
+                cornerRadius = resources.getDimensionPixelSize(R.dimen.padding_small)
+                minWidth = 0
+                minHeight = 0
+                setInsetTop(0)
+                setInsetBottom(0)
+                setPadding(0, 0, 0, 0)
+                backgroundTintList = null
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_HeadlineSmall)
                 setTextColor(
                     MaterialColors.getColor(
                         this,
-                        if (letter in available) com.google.android.material.R.attr.colorOnSurface
+                        if (enabled) com.google.android.material.R.attr.colorOnSurface
                         else com.google.android.material.R.attr.colorOnSurfaceVariant
                     )
                 )
-                alpha = if (letter in available) 1f else 0.32f
-                isEnabled = letter in available
-                isClickable = letter in available
-                isFocusable = letter in available
-                if (letter in available) {
+                alpha = when {
+                    selected -> 1f
+                    enabled -> 0.95f
+                    else -> 0.3f
+                }
+                if (selected) {
+                    val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
+                    setBackgroundColor(surface)
+                } else if (enabled) {
                     val value = TypedValue()
                     context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
                     setBackgroundResource(value.resourceId)
-                    setOnClickListener {
-                        dialog.dismiss()
-                        scrollToLetter(letter)
-                    }
                 }
-                if (letter == currentLetter) {
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
-                }
+                onClick?.let { setOnClickListener { dialog.dismiss(); it() } }
             })
         }
-        dialog.setView(grid)
+        addCell("#", hasUnlettered, currentLetter == '#') { scrollToLetter('#') }
+        ('A'..'Z').forEach { letter ->
+            addCell(letter.toString(), letter in available, currentLetter == letter) {
+                scrollToLetter(letter)
+            }
+        }
+        scroll.addView(grid)
+        content.addView(scroll)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(content)
+        dialog.setOnShowListener {
+            dialog.window?.run {
+                setLayout(MATCH_PARENT, MATCH_PARENT)
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            }
+            content.animate().alpha(1f).setDuration(140L).start()
+        }
         dialog.show()
     }
 
     private fun setupFastScroller(view: AlphabetFastScroller, placement: AlphabetFastScroller.Placement) {
         view.setPlacement(placement)
-        view.onLetterSelected = ::scrollToLetter
+        view.onLetterSelected = ::scrollToLetterNearTouch
         view.onLetterCleared = { pagerAdapter.setActiveLetter(null) }
         when (placement) {
             AlphabetFastScroller.Placement.START ->
