@@ -23,7 +23,7 @@ object PinyinSearch {
      */
     private fun searchCap(raw: String, pinyinCap: String): Boolean {
         if (pinyinCap.length > 8) return false // "最强多媒体播放器".length
-        for (index in getNameStringList(raw)) {
+        for (index in getPinyinInitials(raw)) {
             if (index.contains(pinyinCap, true)) {
                 return true
             }
@@ -37,7 +37,7 @@ object PinyinSearch {
      */
     private fun searchAllSpell(raw: String, pinyinAll: String): Boolean {
         if (pinyinAll.length > 48) return false // "chuang".length * 8
-        for (index in getNameStringPinyinAll(raw)) {
+        for (index in getPinyinFullSpell(raw)) {
             if (index.contains(pinyinAll, true)) {
                 return true
             }
@@ -45,13 +45,15 @@ object PinyinSearch {
         return false
     }
 
-    private fun getNameStringPinyinAll(target: String): ArrayList<String> {
+    fun getPinyinFullSpell(target: String): List<String> {
+        if (target.isEmpty()) return emptyList()
         val res = ArrayList<String>()
         getNameCapListPinyinAll(Array(target.length) { "" }, 0, target, res)
         return res
     }
 
-    private fun getNameStringList(target: String): ArrayList<String> {
+    fun getPinyinInitials(target: String): List<String> {
+        if (target.isEmpty()) return emptyList()
         val res = ArrayList<String>()
         getNameCapList(CharArray(target.length), 0, target, res)
         return res

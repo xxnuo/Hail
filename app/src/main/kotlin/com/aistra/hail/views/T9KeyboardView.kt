@@ -119,8 +119,8 @@ class T9KeyboardView : View {
         val availableHeight = height - outerPadding * 2f
         val keyWidth = (availableWidth - gap * 2f) / 3f
         val keyHeight = (availableHeight - gap * 3f) / 4f
-        labelPaint.textSize = min(24f.sp, keyHeight * 0.42f)
-        subLabelPaint.textSize = min(10f.sp, keyHeight * 0.18f)
+        labelPaint.textSize = min(18f.sp, keyHeight * 0.32f)
+        subLabelPaint.textSize = min(14f.sp, keyHeight * 0.26f)
         iconPaint.strokeWidth = 2f.dp
         keys.forEachIndexed { index, key ->
             val row = index / 3
@@ -205,11 +205,11 @@ class T9KeyboardView : View {
         val labelBaseline = if (key.subLabel.isEmpty()) {
             bounds.centerY() - (labelPaint.ascent() + labelPaint.descent()) / 2f
         } else {
-            bounds.centerY() - 3f.dp
+            bounds.centerY() - 7f.dp
         }
         canvas.drawText(key.label, centerX, labelBaseline, labelPaint)
         if (key.subLabel.isNotEmpty()) {
-            canvas.drawText(key.subLabel, centerX, bounds.centerY() + 15f.dp, subLabelPaint)
+            canvas.drawText(key.subLabel, centerX, bounds.centerY() + 14f.dp, subLabelPaint)
         }
     }
 
