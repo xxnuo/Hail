@@ -173,6 +173,10 @@ abstract class MainFragment : Fragment() {
         if (activity.fab.tag == true) activity.fab.show()
     }
 
+    protected fun hideT9KeyboardFor(owner: View) {
+        hideT9Keyboard(owner)
+    }
+
     private fun applyT9PaddingAfterLayout() {
         activity.t9Keyboard.post {
             if (activity.t9Keyboard.visibility == View.VISIBLE) {

@@ -152,7 +152,11 @@ class SettingsFragment : MainFragment(), MenuProvider {
                 key = HailData.SYNTHESIZE_ADAPTIVE_ICONS,
                 defaultValue = false,
                 titleId = R.string.synthesize_adaptive_icons,
-                icon = Icons.Outlined.Layers
+                icon = Icons.Outlined.Layers,
+                onValueChange = { _, _ ->
+                    AppIconCache.clear()
+                    true
+                }
             )
             sliderPreference(
                 key = HailData.HOME_FONT_SIZE,

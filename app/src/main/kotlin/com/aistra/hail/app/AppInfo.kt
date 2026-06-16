@@ -12,8 +12,13 @@ class AppInfo(
 ) {
     enum class State { NOT_FOUND, UNFROZEN, FROZEN }
 
+    @Volatile
+    private var cachedName: String? = null
+
     val applicationInfo: ApplicationInfo? get() = HPackages.getApplicationInfoOrNull(packageName)
-    val name get() = applicationInfo?.loadLabel(app.packageManager) ?: packageName
+    val name: String get() = cachedName ?: (applicationInfo?.loadLabel(app.packageManager)?.toString() ?: packageName).also {
+        cachedName = it
+    }
     val state
         get() = AppStateCache.stateOrDefault(packageName)
 

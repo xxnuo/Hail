@@ -37,6 +37,7 @@
     <string name="action_undo">撤销</string>
     <string name="action_help">帮助</string>
     <string name="action_search">搜索</string>
+    <string name="action_refresh">刷新</string>
     <string name="action_details">应用信息</string>
     <string name="action_extract_apk">提取安装包</string>
     <string name="action_uninstall">卸载</string>

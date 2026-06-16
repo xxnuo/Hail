@@ -112,7 +112,7 @@ class PagerAdapter(
         val entry = item.entry
         val info = entry.info
         val state = stateOf(info.packageName)
-        val name = info.name
+        val name = entry.name
         holder.name = name
         flags[info.packageName] = info.getFlag(selectedList, state)
             holder.itemView.run {
@@ -310,6 +310,7 @@ class PagerAdapter(
 
     data class AppEntry(
         val info: AppInfo,
+        val name: CharSequence,
         val primaryLetter: Char?,
         val sortKey: String,
         var sectionStartPosition: Int = RecyclerView.NO_POSITION

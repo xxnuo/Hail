@@ -13,6 +13,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -59,6 +60,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -75,7 +78,9 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private var fastScrollerPlacement = AlphabetFastScroller.Placement.END
     private var pendingCurrentListUpdate = false
     private var searchTextWatcher: TextWatcher? = null
-    private val nameCollator = Collator.getInstance()
+    private var searchBackCallback: OnBackPressedCallback? = null
+    private var updateCurrentListJob: Job? = null
+    private var updateCurrentListGeneration = 0
     private var multiselect: Boolean
         set(value) {
             (parentFragment as HomeFragment).multiselect = value
@@ -109,12 +114,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
             layoutManager = gridLayoutManager
             adapter = pagerAdapter
-            addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-                override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                    updateFastScrollerPlacement(rv, e)
-                    return false
-                }
-            })
+            setupPullSearch(this)
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
@@ -139,13 +139,6 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
         }
 
-        binding.refresh.apply {
-            setOnRefreshListener {
-                updateCurrentList()
-                binding.refresh.isRefreshing = false
-            }
-            applyDefaultInsetter { marginRelative(isRtl, start = true, end = true) }
-        }
         setupFastScroller(binding.fastScrollerEnd, AlphabetFastScroller.Placement.END)
         setupFastScroller(binding.fastScrollerStart, AlphabetFastScroller.Placement.START)
         setupFastScroller(binding.fastScrollerBottom, AlphabetFastScroller.Placement.BOTTOM)
@@ -154,6 +147,67 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             app.setAutoFreezeService()
         }
         return binding.root
+    }
+
+    private fun setupPullSearch(recyclerView: RecyclerView) {
+        val touchSlop = ViewConfiguration.get(recyclerView.context).scaledTouchSlop
+        val triggerDistance = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 72f, resources.displayMetrics)
+        val maxTranslation = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 56f, resources.displayMetrics)
+        var startX = 0f
+        var startY = 0f
+        var pulling = false
+
+        fun pullDistance(y: Float) = (y - startY - touchSlop).coerceAtLeast(0f)
+
+        fun applyPull(distance: Float) {
+            recyclerView.translationY = (distance * 0.35f).coerceAtMost(maxTranslation)
+        }
+
+        fun resetPull() {
+            pulling = false
+            recyclerView.animate().translationY(0f).setDuration(160L).start()
+        }
+
+        recyclerView.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                updateFastScrollerPlacement(rv, e)
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startX = e.x
+                        startY = e.y
+                        pulling = false
+                        rv.animate().cancel()
+                    }
+
+                    MotionEvent.ACTION_MOVE -> {
+                        val dy = e.y - startY
+                        val dx = e.x - startX
+                        if (!rv.canScrollVertically(-1) && dy > touchSlop && dy > kotlin.math.abs(dx)) {
+                            pulling = true
+                            rv.parent.requestDisallowInterceptTouchEvent(true)
+                            applyPull(pullDistance(e.y))
+                            return true
+                        }
+                    }
+
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> resetPull()
+                }
+                return false
+            }
+
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+                if (!pulling) return
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_MOVE -> applyPull(pullDistance(e.y))
+                    MotionEvent.ACTION_UP -> {
+                        if (pullDistance(e.y) >= triggerDistance) focusHomeSearch(activity.homeSearchInput)
+                        resetPull()
+                    }
+
+                    MotionEvent.ACTION_CANCEL -> resetPull()
+                }
+            }
+        })
     }
 
     private fun updateFastScrollerPlacement(recyclerView: RecyclerView, event: MotionEvent) {
@@ -206,45 +260,83 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
     }
 
-    private fun updateCurrentList() = HailData.checkedList.filter {
-        if (query.isEmpty()) tag.second in it.tagIdList
-        else ((HailData.nineKeySearch && NineKeySearch.search(
-            query, it.packageName, it.name.toString()
-        )) || FuzzySearch.search(it.packageName, query) || FuzzySearch.search(
-            it.name.toString(), query
-        ) || PinyinSearch.searchPinyinAll(it.name.toString(), query))
-    }.map {
-        PagerAdapter.AppEntry(
-            info = it,
-            primaryLetter = AlphabetIndex.primaryLetter(it.name),
-            sortKey = AlphabetIndex.sortKey(it.name)
-        )
-    }.sortedWith(::compareAppEntries).let {
-        binding.empty.isVisible = it.isEmpty()
-        val packages = it.map { entry -> entry.info.packageName }
-        pagerAdapter.setStateSnapshot(AppStateCache.statesFor(packages))
+    private fun updateCurrentList() {
+        val generation = ++updateCurrentListGeneration
+        val tagId = tag.second
+        val queryText = query
+        val nineKeySearch = HailData.nineKeySearch
         val spanCount = (binding.recyclerView.layoutManager as? GridLayoutManager)?.spanCount ?: 1
-        pagerAdapter.submitAppEntries(
-            it,
-            spanCount,
-            tailSpacerRows = 1,
-            tailSpacerHeight = binding.recyclerView.height.takeIf { height -> height > 0 }
-                ?: resources.displayMetrics.heightPixels
-        )
-        pagerAdapter.setSectionHeaderAlignEnd(fastScrollerPlacement == AlphabetFastScroller.Placement.START)
-        AppStateCache.primeAsync(packages)
-        updateFastScroller()
-        app.setAutoFreezeService()
-    }
-
-    private fun compareAppEntries(a: PagerAdapter.AppEntry, b: PagerAdapter.AppEntry): Int = when {
-        a.info.pinned && !b.info.pinned -> -1
-        b.info.pinned && !a.info.pinned -> 1
-        else -> {
-            val keyResult = a.sortKey.compareTo(b.sortKey, true)
-            if (keyResult != 0) keyResult else nameCollator.compare(a.info.name, b.info.name)
+        val tailSpacerHeight = binding.recyclerView.height.takeIf { height -> height > 0 }
+            ?: resources.displayMetrics.heightPixels
+        updateCurrentListJob?.cancel()
+        updateCurrentListJob = viewLifecycleOwner.lifecycleScope.launch {
+            val result = withContext(Dispatchers.Default) {
+                val apps = HailData.checkedList.toList()
+                buildCurrentList(apps, tagId, queryText, nineKeySearch)
+            }
+            if (generation != updateCurrentListGeneration || _binding == null) return@launch
+            binding.empty.isVisible = result.entries.isEmpty()
+            pagerAdapter.setStateSnapshot(AppStateCache.statesFor(result.packages))
+            pagerAdapter.submitAppEntries(
+                result.entries,
+                spanCount,
+                tailSpacerRows = 1,
+                tailSpacerHeight = tailSpacerHeight
+            )
+            pagerAdapter.setSectionHeaderAlignEnd(fastScrollerPlacement == AlphabetFastScroller.Placement.START)
+            AppStateCache.primeAsync(result.packages)
+            updateFastScroller()
+            app.setAutoFreezeService()
         }
     }
+
+    private suspend fun buildCurrentList(
+        apps: List<AppInfo>,
+        tagId: Int,
+        queryText: String,
+        nineKeySearch: Boolean
+    ): CurrentListResult {
+        val collator = Collator.getInstance()
+        val entries = mutableListOf<PagerAdapter.AppEntry>()
+        for (appInfo in apps) {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val name = appInfo.name
+            if (queryText.isEmpty()) {
+                if (tagId !in appInfo.tagIdList) continue
+            } else {
+                val nameText = name.toString()
+                val matches = (nineKeySearch && NineKeySearch.search(queryText, appInfo.packageName, nameText))
+                        || FuzzySearch.search(appInfo.packageName, queryText)
+                        || FuzzySearch.search(nameText, queryText)
+                        || PinyinSearch.searchPinyinAll(nameText, queryText)
+                if (!matches) continue
+            }
+            entries.add(
+                PagerAdapter.AppEntry(
+                    info = appInfo,
+                    name = name,
+                    primaryLetter = AlphabetIndex.primaryLetter(name),
+                    sortKey = AlphabetIndex.sortKey(name)
+                )
+            )
+        }
+        entries.sortWith { a, b ->
+            when {
+                a.info.pinned && !b.info.pinned -> -1
+                b.info.pinned && !a.info.pinned -> 1
+                else -> {
+                    val keyResult = a.sortKey.compareTo(b.sortKey, true)
+                    if (keyResult != 0) keyResult else collator.compare(a.name, b.name)
+                }
+            }
+        }
+        return CurrentListResult(entries, entries.map { it.info.packageName })
+    }
+
+    private data class CurrentListResult(
+        val entries: List<PagerAdapter.AppEntry>,
+        val packages: List<String>
+    )
 
     private fun updateStateSnapshot(changedPackages: Collection<String>? = null) {
         val packages = pagerAdapter.appList.map { it.packageName }
@@ -735,6 +827,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         app.packageManager.getLaunchIntentForPackage(packageName)?.let {
             HShortcuts.addDynamicShortcut(packageName)
             startActivity(it)
+            clearHomeSearch()
+            clearHomeSearchFocus()
         } ?: HUI.showToast(R.string.activity_not_found)
     }
 
@@ -897,6 +991,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     override fun onMenuItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
+            R.id.action_refresh -> updateCurrentList()
+
             R.id.action_multiselect -> {
                 multiselect = !multiselect
                 item.updateIcon()
@@ -939,9 +1035,25 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
         tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
         activity.homeSearchBar.isVisible = true
+        updateHomeSearchClear(searchInput)
         activity.homeSearchIcon.setOnClickListener { focusHomeSearch(searchInput) }
         activity.homeSearchBar.setOnClickListener { focusHomeSearch(searchInput) }
         setupT9EditText(searchInput, binding.recyclerView)
+        setupSearchBackCallback()
+        searchInput.setOnTouchListener { _, event ->
+            if (event.action != MotionEvent.ACTION_UP || query.isEmpty()) return@setOnTouchListener false
+            val drawable = searchInput.compoundDrawablesRelative[2] ?: return@setOnTouchListener false
+            val drawableWidth = drawable.intrinsicWidth.coerceAtLeast(0)
+            val hitClear = if (searchInput.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+                event.x <= searchInput.paddingLeft + drawableWidth + searchInput.compoundDrawablePadding
+            } else {
+                event.x >= searchInput.width - searchInput.paddingRight - drawableWidth - searchInput.compoundDrawablePadding
+            }
+            if (!hitClear) return@setOnTouchListener false
+            clearHomeSearch()
+            focusHomeSearch(searchInput)
+            true
+        }
         searchTextWatcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
@@ -950,6 +1062,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (query == newText) return
                 query = newText
                 tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
+                updateHomeSearchClear(searchInput)
                 updateCurrentList()
             }
 
@@ -969,6 +1082,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     override fun onDestroyView() {
         searchTextWatcher?.let(activity.homeSearchInput::removeTextChangedListener)
         searchTextWatcher = null
+        searchBackCallback?.remove()
+        searchBackCallback = null
+        updateCurrentListJob?.cancel()
+        updateCurrentListJob = null
         pagerAdapter.onDestroy()
         super.onDestroyView()
         _binding = null
@@ -983,9 +1100,39 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
     }
 
+    private fun setupSearchBackCallback() {
+        searchBackCallback?.remove()
+        searchBackCallback = object : OnBackPressedCallback(query.isNotEmpty()) {
+            override fun handleOnBackPressed() {
+                clearHomeSearch()
+                clearHomeSearchFocus()
+            }
+        }.also {
+            requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it)
+        }
+    }
+
+    private fun clearHomeSearch() {
+        val searchInput = activity.homeSearchInput
+        if (searchInput.text.isNotEmpty()) searchInput.text.clear()
+        if (query.isEmpty()) return
+        query = ""
+        tabs.isVisible = tabs.tabCount > 1
+        updateHomeSearchClear(searchInput)
+        updateCurrentList()
+    }
+
+    private fun updateHomeSearchClear(searchInput: EditText) {
+        val icon = if (query.isEmpty()) 0 else R.drawable.ic_outline_close
+        searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, icon, 0)
+        searchInput.compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.padding_small)
+        searchBackCallback?.isEnabled = query.isNotEmpty()
+    }
+
     private fun clearHomeSearchFocus() {
         val searchInput = activity.homeSearchInput
         searchInput.clearFocus()
+        hideT9KeyboardFor(searchInput)
         searchInput.context.getSystemService<InputMethodManager>()
             ?.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }

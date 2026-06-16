@@ -15,8 +15,17 @@ import com.aistra.hail.app.HailData
 import com.aistra.hail.services.AutoFreezeService
 import com.aistra.hail.utils.HDhizuku
 import com.aistra.hail.utils.HTarget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 class HailApp : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val autoFreezeServiceVersion = AtomicInteger()
+
     override fun onCreate() {
         super.onCreate()
         app = this
@@ -26,19 +35,31 @@ class HailApp : Application() {
     }
 
     fun setAutoFreezeService(autoFreezeAfterLock: Boolean = HailData.autoFreezeAfterLock, context: Context = app) {
+        val version = autoFreezeServiceVersion.incrementAndGet()
+        appScope.launch {
+            val start = shouldStartAutoFreezeService(autoFreezeAfterLock)
+            withContext(Dispatchers.Main) {
+                if (version == autoFreezeServiceVersion.get()) setAutoFreezeServiceEnabled(start, context)
+            }
+        }
+    }
+
+    private fun shouldStartAutoFreezeService(autoFreezeAfterLock: Boolean): Boolean {
+        if (!autoFreezeAfterLock) return false
         val candidates = HailData.checkedList.filter {
             it.packageName != packageName && !it.whitelisted
         }
-        val cachedStates = candidates.associate { it.packageName to AppStateCache.stateOf(it.packageName) }
-        if (autoFreezeAfterLock && cachedStates.values.any { it == null }) {
-            AppStateCache.primeAsync(cachedStates.keys) { setAutoFreezeService(autoFreezeAfterLock, context) }
-        }
-        val start = autoFreezeAfterLock && candidates.any {
-            when (cachedStates[it.packageName]) {
+        if (candidates.isEmpty()) return false
+        val states = AppStateCache.prime(candidates.map { it.packageName })
+        return candidates.any {
+            when (states[it.packageName]) {
                 AppInfo.State.FROZEN, AppInfo.State.NOT_FOUND -> false
                 else -> true
             }
         }
+    }
+
+    private fun setAutoFreezeServiceEnabled(start: Boolean, context: Context) {
         val intent = Intent(app, AutoFreezeService::class.java)
         if (start) {
             setAutoFreezeServiceEnabled(true)

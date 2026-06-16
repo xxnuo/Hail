@@ -4,14 +4,18 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.widget.ImageView
 import androidx.collection.LruCache
+import com.aistra.hail.HailApp
 import com.aistra.hail.R
 import com.aistra.hail.app.HailData
 import kotlinx.coroutines.*
 import me.zhanghai.android.appiconloader.AppIconLoader
+import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.coroutines.CoroutineContext
@@ -40,7 +44,9 @@ object AppIconCache : CoroutineScope {
 
     private var appIconLoaders = mutableMapOf<Int, AppIconLoader>()
 
-    private var shrinkNonAdaptiveIcons: Boolean
+    private data class IconConfig(val iconPack: String, val shrinkNonAdaptiveIcons: Boolean)
+
+    private var iconConfig: IconConfig
 
     private val cf by lazy { ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) }) }
 
@@ -59,7 +65,7 @@ object AppIconCache : CoroutineScope {
         val threadCount = 1.coerceAtLeast(availableProcessorsCount / 2)
         val loadIconExecutor: Executor = Executors.newFixedThreadPool(threadCount)
         dispatcher = loadIconExecutor.asCoroutineDispatcher()
-        shrinkNonAdaptiveIcons = HailData.synthesizeAdaptiveIcons
+        iconConfig = currentIconConfig()
     }
 
     private fun get(packageName: String, userId: Int, size: Int): Bitmap? {
@@ -72,22 +78,34 @@ object AppIconCache : CoroutineScope {
         }
     }
 
-    fun clear() = lruCache.evictAll()
+    fun clear() {
+        lruCache.evictAll()
+        launch(dispatcher) {
+            diskCacheRoot().deleteRecursively()
+        }
+    }
 
     @SuppressLint("NewApi")
     fun getOrLoadBitmap(context: Context, info: ApplicationInfo, userId: Int, size: Int): Bitmap {
+        val currentConfig = ensureCurrentConfig()
         val cachedBitmap = get(info.packageName, userId, size)
         if (cachedBitmap != null) {
             return cachedBitmap
         }
+        val diskCacheFile = diskCacheFile(context, info, userId, size, currentConfig)
+        val diskBitmap = loadFromDisk(diskCacheFile)
+        if (diskBitmap != null) {
+            put(info.packageName, userId, size, diskBitmap)
+            return diskBitmap
+        }
         var loader = appIconLoaders[size]
-        if (loader == null || shrinkNonAdaptiveIcons != HailData.synthesizeAdaptiveIcons) {
-            shrinkNonAdaptiveIcons = HailData.synthesizeAdaptiveIcons
-            loader = AppIconLoader(size, shrinkNonAdaptiveIcons, context)
+        if (loader == null) {
+            loader = AppIconLoader(size, currentConfig.shrinkNonAdaptiveIcons, context)
             appIconLoaders[size] = loader
         }
         val bitmap = IconPack.loadIcon(info.packageName) ?: loader.loadIcon(info, false)
         put(info.packageName, userId, size, bitmap)
+        saveToDisk(diskCacheFile, bitmap)
         return bitmap
     }
 
@@ -104,16 +122,13 @@ object AppIconCache : CoroutineScope {
             val size = view.measuredWidth.let {
                 if (it > 0) it else context.resources.getDimensionPixelSize(R.dimen.app_icon_size)
             }
-            if (shrinkNonAdaptiveIcons != HailData.synthesizeAdaptiveIcons) {
-                lruCache.evictAll()
-            } else {
-                val cachedBitmap = get(info.packageName, userId, size)
-                if (cachedBitmap != null) {
-                    if (!view.isCurrentRequest(info.packageName)) return@launch
-                    view.setImageBitmap(cachedBitmap)
-                    view.applyCurrentGrayscale()
-                    return@launch
-                }
+            ensureCurrentConfig()
+            val cachedBitmap = get(info.packageName, userId, size)
+            if (cachedBitmap != null) {
+                if (!view.isCurrentRequest(info.packageName)) return@launch
+                view.setImageBitmap(cachedBitmap)
+                view.applyCurrentGrayscale()
+                return@launch
             }
 
             val bitmap = try {
@@ -151,4 +166,71 @@ object AppIconCache : CoroutineScope {
         val enabled = (tag as? IconRequest)?.grayscale ?: defaultValue
         colorFilter = if (enabled) cf else null
     }
+
+    private fun diskCacheRoot(context: Context = HailApp.app): File =
+        File(context.cacheDir, "app_icons")
+
+    private fun diskCacheFile(context: Context, info: ApplicationInfo, userId: Int, size: Int, config: IconConfig): File {
+        val appUpdatedAt = HPackages.getUnhiddenPackageInfoOrNull(info.packageName)?.lastUpdateTime ?: 0
+        val iconPackUpdatedAt = if (config.iconPack == HailData.ACTION_NONE) 0
+        else HPackages.getUnhiddenPackageInfoOrNull(config.iconPack)?.lastUpdateTime ?: 0
+        val key = listOf(
+            2,
+            info.packageName,
+            userId,
+            size,
+            appUpdatedAt,
+            config.iconPack,
+            iconPackUpdatedAt,
+            config.shrinkNonAdaptiveIcons
+        ).joinToString("|")
+        return File(diskCacheRoot(context), "${key.sha256()}.png")
+    }
+
+    private fun currentIconConfig() = IconConfig(HailData.iconPack, HailData.synthesizeAdaptiveIcons)
+
+    private fun ensureCurrentConfig(): IconConfig {
+        val currentConfig = currentIconConfig()
+        if (iconConfig != currentConfig) {
+            iconConfig = currentConfig
+            lruCache.evictAll()
+            appIconLoaders.clear()
+        }
+        return currentConfig
+    }
+
+    private fun loadFromDisk(file: File): Bitmap? = runCatching {
+        if (!file.isFile) return null
+        BitmapFactory.decodeFile(file.path)
+    }.getOrNull()
+
+    private fun saveToDisk(file: File, bitmap: Bitmap) {
+        runCatching {
+            val dir = file.parentFile ?: return
+            if (!dir.exists() && !dir.mkdirs()) return
+            val tempFile = File.createTempFile(file.name, ".tmp", dir)
+            val success = tempFile.outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            if (success) {
+                if (file.exists()) file.delete()
+                tempFile.renameTo(file)
+            } else {
+                tempFile.delete()
+            }
+        }
+    }
+
+    private fun String.sha256(): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(toByteArray())
+        val chars = CharArray(bytes.size * 2)
+        bytes.forEachIndexed { index, byte ->
+            val value = byte.toInt() and 0xff
+            chars[index * 2] = HEX_CHARS[value ushr 4]
+            chars[index * 2 + 1] = HEX_CHARS[value and 0x0f]
+        }
+        return String(chars)
+    }
+
+    private const val HEX_CHARS = "0123456789abcdef"
 }
