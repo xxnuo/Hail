@@ -6,7 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.aistra.hail.HailApp
-import com.aistra.hail.app.AppManager
+import com.aistra.hail.app.AppInfo
+import com.aistra.hail.app.AppStateCache
 import com.aistra.hail.app.HailData
 import com.aistra.hail.utils.*
 import kotlinx.coroutines.*
@@ -58,7 +59,12 @@ class AppsViewModel(application: Application) : AndroidViewModel(application) {
     fun updateAppList() {
         viewModelScope.launch {
             postRefreshState(true)
-            apps.postValue(HPackages.getInstalledApplications())
+            val installedApps = withContext(Dispatchers.IO) {
+                HPackages.getInstalledApplications().also {
+                    AppStateCache.refresh(it.map { info -> info.packageName })
+                }
+            }
+            apps.postValue(installedApps)
         }
     }
 
@@ -81,20 +87,22 @@ class AppsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val ApplicationInfo.isSystemApp: Boolean
         get() = flags and ApplicationInfo.FLAG_SYSTEM == ApplicationInfo.FLAG_SYSTEM
-    private val ApplicationInfo.isAppFrozen get() = AppManager.isAppFrozen(packageName)
 
     private suspend fun filterList(
         appList: List<ApplicationInfo>,
         query: String?
     ): List<ApplicationInfo> {
         val pm = getApplication<HailApp>().packageManager
+        val states = withContext(Dispatchers.IO) {
+            AppStateCache.prime(appList.map { it.packageName })
+        }
         return withContext(Dispatchers.Default) {
             return@withContext appList.filter {
                 ((HailData.filterUserApps && !it.isSystemApp)
                         || (HailData.filterSystemApps && it.isSystemApp))
 
-                        && ((HailData.filterFrozenApps && it.isAppFrozen)
-                        || (HailData.filterUnfrozenApps && !it.isAppFrozen))
+                        && ((HailData.filterFrozenApps && states[it.packageName] == AppInfo.State.FROZEN)
+                        || (HailData.filterUnfrozenApps && states[it.packageName] != AppInfo.State.FROZEN))
                         // Search apps
                         && ((HailData.nineKeySearch
                         && (NineKeySearch.search(query, it.packageName, it.loadLabel(pm).toString())))

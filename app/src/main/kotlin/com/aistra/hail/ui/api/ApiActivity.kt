@@ -216,11 +216,11 @@ class ApiActivity : ComponentActivity() {
     }
 
     private fun setListFrozen(
-        frozen: Boolean, list: List<AppInfo> = HailData.checkedList, skipWhitelisted: Boolean = false
+        frozen: Boolean, list: List<AppInfo> = HailData.checkedList, skipWhitelisted: Boolean = true
     ) {
         val filtered =
             list.filter { AppManager.isAppFrozen(it.packageName) != frozen && !(skipWhitelisted && it.whitelisted) }
-        when (val result = AppManager.setListFrozen(frozen, *filtered.toTypedArray())) {
+        when (val result = AppManager.setListFrozen(frozen, filtered, skipWhitelisted)) {
             null -> throw IllegalStateException(getString(R.string.permission_denied))
             else -> {
                 HUI.showToast(

@@ -22,6 +22,7 @@ import kotlin.coroutines.CoroutineContext
  * https://raw.githubusercontent.com/RikkaApps/Shizuku/master/manager/src/main/java/moe/shizuku/manager/utils/AppIconCache.kt
  */
 object AppIconCache : CoroutineScope {
+    private data class IconRequest(val packageName: String, val grayscale: Boolean)
 
     private class AppIconLruCache constructor(maxSize: Int) :
         LruCache<Triple<String, Int, Int>, Bitmap>(maxSize) {
@@ -98,6 +99,7 @@ object AppIconCache : CoroutineScope {
         view: ImageView,
         setColorFilter: Boolean = false
     ): Job {
+        view.tag = IconRequest(info.packageName, setColorFilter)
         return launch {
             val size = view.measuredWidth.let {
                 if (it > 0) it else context.resources.getDimensionPixelSize(R.dimen.app_icon_size)
@@ -107,8 +109,9 @@ object AppIconCache : CoroutineScope {
             } else {
                 val cachedBitmap = get(info.packageName, userId, size)
                 if (cachedBitmap != null) {
+                    if (!view.isCurrentRequest(info.packageName)) return@launch
                     view.setImageBitmap(cachedBitmap)
-                    view.colorFilter = if (setColorFilter) cf else null
+                    view.applyCurrentGrayscale()
                     return@launch
                 }
             }
@@ -124,12 +127,28 @@ object AppIconCache : CoroutineScope {
                 null
             }
 
+            if (!view.isCurrentRequest(info.packageName)) return@launch
             if (bitmap != null) {
                 view.setImageBitmap(bitmap)
             } else {
                 view.setImageDrawable(if (HTarget.O) context.packageManager.defaultActivityIcon else null)
             }
-            view.colorFilter = if (setColorFilter) cf else null
+            view.applyCurrentGrayscale()
         }
+    }
+
+    fun setGrayscale(view: ImageView, enabled: Boolean) {
+        (view.tag as? IconRequest)?.let {
+            view.tag = it.copy(grayscale = enabled)
+        }
+        view.applyCurrentGrayscale(enabled)
+    }
+
+    private fun ImageView.isCurrentRequest(packageName: String): Boolean =
+        (tag as? IconRequest)?.packageName == packageName
+
+    private fun ImageView.applyCurrentGrayscale(defaultValue: Boolean = false) {
+        val enabled = (tag as? IconRequest)?.grayscale ?: defaultValue
+        colorFilter = if (enabled) cf else null
     }
 }

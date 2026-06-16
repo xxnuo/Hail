@@ -2,8 +2,12 @@
     <dimen name="header_height">176dp</dimen>
     <dimen name="fab_margin">16dp</dimen>
     <dimen name="app_icon_size">64dp</dimen>
+    <dimen name="home_search_width">192dp</dimen>
     <dimen name="padding_extra_small">4dp</dimen>
     <dimen name="padding_small">8dp</dimen>
     <dimen name="padding_medium">16dp</dimen>
     <dimen name="padding_large">24dp</dimen>
+    <dimen name="fast_scroller_extent">48dp</dimen>
+    <dimen name="home_section_header_min_height">72dp</dimen>
+    <dimen name="letter_picker_cell_size">48dp</dimen>
 </resources>

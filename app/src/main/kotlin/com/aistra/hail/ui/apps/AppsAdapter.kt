@@ -7,7 +7,7 @@ import android.widget.CompoundButton
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.aistra.hail.app.AppManager
+import com.aistra.hail.app.AppInfo
 import com.aistra.hail.app.HailData
 import com.aistra.hail.databinding.ItemAppsBinding
 import com.aistra.hail.utils.AppIconCache
@@ -16,8 +16,11 @@ import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.Job
 
 class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
+    private val states: MutableMap<String, AppInfo.State> = mutableMapOf()
 
     companion object {
+        private const val PAYLOAD_STATE = "state"
+
         val DIFF = object : DiffUtil.ItemCallback<ApplicationInfo>() {
             override fun areItemsTheSame(
                 oldItem: ApplicationInfo, newItem: ApplicationInfo
@@ -39,6 +42,29 @@ class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val info = currentList[position]
         holder.bindInfo(info)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.any { it == PAYLOAD_STATE }) {
+            holder.bindState()
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
+    fun setStateSnapshot(snapshot: Map<String, AppInfo.State>) {
+        states.clear()
+        states.putAll(snapshot)
+    }
+
+    fun updateStateSnapshot(snapshot: Map<String, AppInfo.State>, changedPackages: Collection<String>? = null) {
+        setStateSnapshot(snapshot)
+        if (itemCount == 0) return
+        val changed = changedPackages?.toSet()
+        if (changed == null) notifyItemRangeChanged(0, itemCount, PAYLOAD_STATE)
+        else currentList.forEachIndexed { index, info ->
+            if (info.packageName in changed) notifyItemChanged(index, PAYLOAD_STATE)
+        }
     }
 
     fun onDestroy() {
@@ -67,13 +93,21 @@ class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
         fun bindInfo(info: ApplicationInfo) {
             updating = true
             this.info = info
-            val frozen = AppManager.isAppFrozen(pkg)
+            val frozen = isFrozen()
 
             binding.appIcon.apply {
                 loadIconJob = AppIconCache.loadIconBitmapAsync(
                     context, info, HPackages.myUserId, this, HailData.grayscaleIcon && frozen
                 )
             }
+            binding.appStar.isChecked = HailData.isChecked(pkg)
+            bindState()
+            updating = false
+        }
+
+        fun bindState() {
+            val frozen = isFrozen()
+            AppIconCache.setGrayscale(binding.appIcon, HailData.grayscaleIcon && frozen)
             binding.appName.apply {
                 val name = info.loadLabel(context.packageManager)
                 text = if (!HailData.grayscaleIcon && frozen) "❄️$name" else name
@@ -89,9 +123,9 @@ class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
                 text = pkg
                 isEnabled = !HailData.grayscaleIcon || !frozen
             }
-            binding.appStar.isChecked = HailData.isChecked(pkg)
-            updating = false
         }
+
+        private fun isFrozen() = states[pkg] == AppInfo.State.FROZEN
     }
 
     interface OnItemClickListener {

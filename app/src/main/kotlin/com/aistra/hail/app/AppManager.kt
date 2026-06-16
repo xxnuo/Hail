@@ -7,6 +7,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object AppManager {
+    data class SetListFrozenResult(
+        val successPackages: Set<String>,
+        val hasFailure: Boolean,
+        val toastArg: String?
+    )
+
     val lockScreen: Boolean
         get() = when {
             HailData.workingMode.startsWith(HailData.OWNER) -> HPolicy.lockScreen
@@ -26,28 +32,67 @@ object AppManager {
                 || HPackages.isAppSuspended(packageName)
     }
 
-    fun setListFrozen(frozen: Boolean, vararg appInfo: AppInfo): String? {
-        val excludeMe = appInfo.filter { it.packageName != BuildConfig.APPLICATION_ID }
-        if (HailData.workingMode.startsWith(HailData.SU)) {
-            return setSuListFrozen(frozen, excludeMe)
-        }
-        var i = 0
-        var denied = false
-        var name = String()
-        excludeMe.forEach {
-            when {
-                setAppFrozen(it.packageName, frozen) -> {
-                    i++
-                    name = it.name.toString()
-                }
+    fun setListFrozen(frozen: Boolean, vararg appInfo: AppInfo): String? =
+        setListFrozenResult(frozen, appInfo.asList()).toastArg
 
-                it.applicationInfo != null -> denied = true
+    fun setListFrozen(
+        frozen: Boolean,
+        appInfo: List<AppInfo>,
+        skipWhitelisted: Boolean = true
+    ): String? = setListFrozenResult(frozen, appInfo, skipWhitelisted).toastArg
+
+    fun setListFrozenResult(frozen: Boolean, vararg appInfo: AppInfo): SetListFrozenResult =
+        setListFrozenResult(frozen, appInfo.asList())
+
+    fun setListFrozenResult(
+        frozen: Boolean,
+        appInfo: List<AppInfo>,
+        skipWhitelisted: Boolean = true
+    ): SetListFrozenResult {
+        val targets = appInfo.filterListFrozenTargets(skipWhitelisted)
+        return if (HailData.workingMode.startsWith(HailData.SU)) {
+            val (success, hasFailure) = setSuListFrozen(frozen, targets)
+            buildSetListFrozenResult(frozen, targets, success, hasFailure)
+        } else {
+            val success = mutableSetOf<String>()
+            var hasFailure = false
+            targets.forEach {
+                when {
+                    setAppFrozenRaw(it.packageName, frozen) -> success += it.packageName
+                    it.applicationInfo != null -> hasFailure = true
+                }
             }
+            buildSetListFrozenResult(frozen, targets, success, hasFailure)
         }
-        return if (denied && i == 0) null else if (i == 1) name else i.toString()
     }
 
-    private fun setSuListFrozen(frozen: Boolean, appInfo: List<AppInfo>): String? {
+    private fun List<AppInfo>.filterListFrozenTargets(skipWhitelisted: Boolean): List<AppInfo> {
+        val whitelistedPackages = if (skipWhitelisted) {
+            HailData.checkedList.filter { it.whitelisted }.mapTo(mutableSetOf()) { it.packageName }
+        } else emptySet()
+        return filter {
+            it.packageName != BuildConfig.APPLICATION_ID &&
+                    (!skipWhitelisted || (!it.whitelisted && it.packageName !in whitelistedPackages))
+        }
+    }
+
+    private fun buildSetListFrozenResult(
+        frozen: Boolean,
+        appInfo: List<AppInfo>,
+        success: Set<String>,
+        hasFailure: Boolean
+    ): SetListFrozenResult {
+        if (success.isNotEmpty()) {
+            AppStateCache.markFrozen(success, frozen)
+            AppStateCache.refreshAsync(success)
+        }
+        val toastArg = if (hasFailure && success.isEmpty()) null
+        else if (success.size == 1) appInfo.firstOrNull { it.packageName in success }?.name?.toString()
+        else success.size.toString()
+        return SetListFrozenResult(success, hasFailure, toastArg)
+    }
+
+    private fun setSuListFrozen(frozen: Boolean, appInfo: List<AppInfo>): Pair<Set<String>, Boolean> {
         val packageNames = appInfo.map { it.packageName }
         val success = when (HailData.workingMode) {
             HailData.MODE_SU_STOP -> if (frozen) HShell.forceStopApps(packageNames) else packageNames.toSet()
@@ -56,23 +101,14 @@ object AppManager {
             HailData.MODE_SU_SUSPEND -> HShell.setAppsSuspended(packageNames, frozen)
             else -> emptySet()
         }
-        var i = 0
-        var denied = false
-        var name = String()
+        var hasFailure = false
         appInfo.forEach {
-            when {
-                it.packageName in success -> {
-                    i++
-                    name = it.name.toString()
-                }
-
-                it.applicationInfo != null -> denied = true
-            }
+            if (it.packageName !in success && it.applicationInfo != null) hasFailure = true
         }
-        return if (denied && i == 0) null else if (i == 1) name else i.toString()
+        return success to hasFailure
     }
 
-    fun setAppFrozen(packageName: String, frozen: Boolean): Boolean =
+    private fun setAppFrozenRaw(packageName: String, frozen: Boolean): Boolean =
         packageName != BuildConfig.APPLICATION_ID && when (HailData.workingMode) {
             HailData.MODE_OWNER_HIDE -> HPolicy.setAppHidden(packageName, frozen)
             HailData.MODE_OWNER_SUSPEND -> HPolicy.setAppSuspended(packageName, frozen)
@@ -91,6 +127,14 @@ object AppManager {
             HailData.MODE_PRIVAPP_STOP -> !frozen || HPackages.forceStopApp(packageName)
             HailData.MODE_PRIVAPP_DISABLE -> HPackages.setAppDisabled(packageName, frozen)
             else -> false
+        }
+
+    fun setAppFrozen(packageName: String, frozen: Boolean): Boolean =
+        setAppFrozenRaw(packageName, frozen).also {
+            if (it) {
+                AppStateCache.markFrozen(listOf(packageName), frozen)
+                AppStateCache.refreshAsync(listOf(packageName))
+            }
         }
 
     fun uninstallApp(packageName: String): Boolean {

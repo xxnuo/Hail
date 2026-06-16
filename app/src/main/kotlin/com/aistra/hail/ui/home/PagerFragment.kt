@@ -3,8 +3,11 @@ package com.aistra.hail.ui.home
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.util.TypedValue
 import android.view.*
 import android.widget.EditText
+import android.widget.GridLayout
+import android.widget.TextView
 import androidx.appcompat.widget.SearchView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -82,6 +85,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         pagerAdapter = PagerAdapter(selectedList).apply {
             onItemClickListener = this@PagerFragment
             onItemLongClickListener = this@PagerFragment
+            onSectionHeaderClickListener = ::showLetterPicker
         }
         binding.recyclerView.run {
             val gridLayoutManager = GridLayoutManager(
@@ -126,7 +130,6 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
             applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true) }
         }
-        setupFastScroller(binding.fastScrollerStart, AlphabetFastScroller.Placement.START)
         setupFastScroller(binding.fastScrollerEnd, AlphabetFastScroller.Placement.END)
         setupFastScroller(binding.fastScrollerBottom, AlphabetFastScroller.Placement.BOTTOM)
         AppStateCache.updates.observe(viewLifecycleOwner) {
@@ -235,6 +238,57 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         activity.fab.hide()
     }
 
+    private fun showLetterPicker(currentLetter: Char) {
+        val available = fastScrollPositions.keys
+        val dialog = MaterialAlertDialogBuilder(requireActivity()).create()
+        val grid = GridLayout(requireContext()).apply {
+            columnCount = 4
+            setPadding(
+                resources.getDimensionPixelSize(R.dimen.padding_medium),
+                resources.getDimensionPixelSize(R.dimen.padding_medium),
+                resources.getDimensionPixelSize(R.dimen.padding_medium),
+                resources.getDimensionPixelSize(R.dimen.padding_medium)
+            )
+        }
+        ('A'..'Z').forEach { letter ->
+            grid.addView(TextView(requireContext()).apply {
+                val cellSize = resources.getDimensionPixelSize(R.dimen.letter_picker_cell_size)
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = cellSize
+                    height = cellSize
+                }
+                gravity = Gravity.CENTER
+                text = letter.toString()
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+                setTextColor(
+                    MaterialColors.getColor(
+                        this,
+                        if (letter in available) com.google.android.material.R.attr.colorOnSurface
+                        else com.google.android.material.R.attr.colorOnSurfaceVariant
+                    )
+                )
+                alpha = if (letter in available) 1f else 0.32f
+                isEnabled = letter in available
+                isClickable = letter in available
+                isFocusable = letter in available
+                if (letter in available) {
+                    val value = TypedValue()
+                    context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                    setBackgroundResource(value.resourceId)
+                    setOnClickListener {
+                        dialog.dismiss()
+                        scrollToLetter(letter)
+                    }
+                }
+                if (letter == currentLetter) {
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+            })
+        }
+        dialog.setView(grid)
+        dialog.show()
+    }
+
     private fun setupFastScroller(view: AlphabetFastScroller, placement: AlphabetFastScroller.Placement) {
         view.setPlacement(placement)
         view.onLetterSelected = ::scrollToLetter
@@ -252,7 +306,6 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun fastScrollers() = listOf(
-        binding.fastScrollerStart,
         binding.fastScrollerEnd,
         binding.fastScrollerBottom
     )
@@ -260,7 +313,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private fun activeFastScrollers() = if (isLandscape) {
         listOf(binding.fastScrollerBottom)
     } else {
-        listOf(binding.fastScrollerStart, binding.fastScrollerEnd)
+        listOf(binding.fastScrollerEnd)
     }
 
     private fun showFastScrollers() {
@@ -320,7 +373,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         ) { _, which ->
             when (which) {
                 0 -> launchApp(pkg)
-                1 -> setListFrozen(!frozen, listOf(info))
+                1 -> setListFrozen(!frozen, listOf(info), skipWhitelisted = false)
                 2 -> {
                     val values = resources.getIntArray(R.array.deferred_task_values)
                     val entries = arrayOfNulls<String>(values.size)
@@ -372,7 +425,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 7 -> exportToClipboard(listOf(info))
                 8 -> removeCheckedApp(pkg)
                 9 -> {
-                    setListFrozen(false, listOf(info), false) {
+                    setListFrozen(false, listOf(info), updateList = false, skipWhitelisted = false) {
                         if (AppStateCache.stateOf(pkg) != AppInfo.State.FROZEN) removeCheckedApp(pkg)
                     }
                 }
@@ -432,11 +485,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         ) { _, which ->
             when (which) {
                 0 -> {
-                    setListFrozen(true, selectedList, false) { deselect() }
+                    setListFrozen(true, selectedList, updateList = false) { deselect() }
                 }
 
                 1 -> {
-                    setListFrozen(false, selectedList, false) { deselect() }
+                    setListFrozen(false, selectedList, updateList = false) { deselect() }
                 }
 
                 2 -> triStateTagDialog()
@@ -454,7 +507,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
                 5 -> {
                     val selected = selectedList.toList()
-                    setListFrozen(false, selected, false) {
+                    setListFrozen(false, selected, updateList = false) {
                         selected.forEach {
                             if (AppStateCache.stateOf(it.packageName) != AppInfo.State.FROZEN) removeCheckedApp(
                                 it.packageName,
@@ -559,6 +612,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         frozen: Boolean,
         list: List<AppInfo> = HailData.checkedList,
         updateList: Boolean = true,
+        skipWhitelisted: Boolean = true,
         onDone: (() -> Unit)? = null
     ) {
         if (HailData.workingMode == HailData.MODE_DEFAULT) {
@@ -574,7 +628,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 }
             }
         }
-        val targetList = list.toList()
+        val targetList = list.filterNot { skipWhitelisted && it.whitelisted }
         viewLifecycleOwner.lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
@@ -587,7 +641,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                             else -> true
                         }
                     }
-                    AppManager.setListFrozenResult(frozen, *filtered.toTypedArray())
+                    AppManager.setListFrozenResult(frozen, filtered, skipWhitelisted)
                 }
             }.getOrElse {
                 HLog.e(it)

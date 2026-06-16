@@ -9,7 +9,8 @@ import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
-import com.aistra.hail.app.AppManager
+import com.aistra.hail.app.AppInfo
+import com.aistra.hail.app.AppStateCache
 import com.aistra.hail.app.HailData
 import com.aistra.hail.services.AutoFreezeService
 import com.aistra.hail.utils.HDhizuku
@@ -25,8 +26,18 @@ class HailApp : Application() {
     }
 
     fun setAutoFreezeService(autoFreezeAfterLock: Boolean = HailData.autoFreezeAfterLock, context: Context = app) {
-        val start = autoFreezeAfterLock && HailData.checkedList.any {
-            it.packageName != packageName && it.applicationInfo != null && !AppManager.isAppFrozen(it.packageName) && !it.whitelisted
+        val candidates = HailData.checkedList.filter {
+            it.packageName != packageName && !it.whitelisted
+        }
+        val cachedStates = candidates.associate { it.packageName to AppStateCache.stateOf(it.packageName) }
+        if (autoFreezeAfterLock && cachedStates.values.any { it == null }) {
+            AppStateCache.primeAsync(cachedStates.keys) { setAutoFreezeService(autoFreezeAfterLock, context) }
+        }
+        val start = autoFreezeAfterLock && candidates.any {
+            when (cachedStates[it.packageName]) {
+                AppInfo.State.FROZEN, AppInfo.State.NOT_FOUND -> false
+                else -> true
+            }
         }
         val intent = Intent(app, AutoFreezeService::class.java)
         if (start) {

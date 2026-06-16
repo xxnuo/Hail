@@ -33,6 +33,7 @@ class PagerAdapter(
         private set
     var sectionPositions: Map<Char, Int> = emptyMap()
         private set
+    var onSectionHeaderClickListener: ((Char) -> Unit)? = null
     lateinit var onItemClickListener: OnItemClickListener
     lateinit var onItemLongClickListener: OnItemLongClickListener
 
@@ -51,12 +52,19 @@ class PagerAdapter(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
+                minHeight = resources.getDimensionPixelSize(R.dimen.home_section_header_min_height)
                 setPadding(
                     resources.getDimensionPixelSize(R.dimen.padding_medium),
+                    resources.getDimensionPixelSize(R.dimen.padding_large),
                     resources.getDimensionPixelSize(R.dimen.padding_medium),
-                    resources.getDimensionPixelSize(R.dimen.padding_medium),
-                    resources.getDimensionPixelSize(R.dimen.padding_extra_small)
+                    resources.getDimensionPixelSize(R.dimen.padding_medium)
                 )
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                isClickable = true
+                isFocusable = true
+                val selectable = TypedValue()
+                context.theme.resolveAttribute(android.R.attr.selectableItemBackground, selectable, true)
+                setBackgroundResource(selectable.resourceId)
                 setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
                 setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
             })
@@ -86,6 +94,7 @@ class PagerAdapter(
         val item = currentList[position]
         if (item is Item.Header) {
             (holder.itemView as? TextView)?.text = item.letter.toString()
+            holder.itemView.setOnClickListener { onSectionHeaderClickListener?.invoke(item.letter) }
             return
         }
         if (item !is Item.App) return

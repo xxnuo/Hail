@@ -6,7 +6,7 @@
             android:icon="@drawable/ic_outline_search"
             android:title="@string/action_search"
             app:actionViewClass="androidx.appcompat.widget.SearchView"
-            app:showAsAction="always|collapseActionView"
+            app:showAsAction="always"
             tools:ignore="AlwaysShowAction"/>
     <item
             android:id="@+id/action_multiselect"

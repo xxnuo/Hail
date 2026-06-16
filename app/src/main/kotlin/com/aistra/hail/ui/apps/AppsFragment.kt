@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.aistra.hail.HailApp.Companion.app
 import com.aistra.hail.R
 import com.aistra.hail.app.AppManager
+import com.aistra.hail.app.AppStateCache
 import com.aistra.hail.app.HailData
 import com.aistra.hail.databinding.FragmentAppsBinding
 import com.aistra.hail.extensions.*
@@ -117,7 +118,15 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
             }
         }
         model.displayApps.observe(viewLifecycleOwner) {
+            appsAdapter.setStateSnapshot(AppStateCache.statesFor(it.map { info -> info.packageName }))
             appsAdapter.submitList(it)
+        }
+        AppStateCache.updates.observe(viewLifecycleOwner) {
+            val packages = appsAdapter.currentList.map { info -> info.packageName }
+            appsAdapter.updateStateSnapshot(AppStateCache.statesFor(packages), it.packageNames)
+            if (it.packageNames == null || HailData.filterFrozenApps.xor(HailData.filterUnfrozenApps)) {
+                updateDisplayAppList()
+            }
         }
 
         return binding.root

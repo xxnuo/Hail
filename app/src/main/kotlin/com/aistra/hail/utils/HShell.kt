@@ -31,7 +31,7 @@ object HShell {
         if (targets.isEmpty()) return emptySet()
         val script = buildString {
             targets.forEachIndexed { index, packageName ->
-                append(command(shellQuote(packageName))).append('\n')
+                append("{ ").append(command(shellQuote(packageName))).append("; } >/dev/null 2>&1\n")
                 append("echo $BATCH_STATUS_PREFIX$index:$?\n")
             }
         }
