@@ -2,16 +2,17 @@ package com.aistra.hail.ui.home
 
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.*
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.widget.SearchView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
+import androidx.core.content.getSystemService
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.MenuHost
 import androidx.core.view.MenuProvider
@@ -71,6 +73,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private lateinit var pagerAdapter: PagerAdapter
     private var fastScrollPositions: Map<Char, Int> = emptyMap()
     private var pendingCurrentListUpdate = false
+    private var searchTextWatcher: TextWatcher? = null
     private val nameCollator = Collator.getInstance()
     private var multiselect: Boolean
         set(value) {
@@ -431,9 +434,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun updateBarTitle() {
-        activity.supportActionBar?.title =
+        activity.supportActionBar?.title = ""
+        activity.homeSearchInput.hint =
             if (multiselect) getString(R.string.msg_selected, selectedList.size.toString())
-            else getString(R.string.app_name)
+            else getString(R.string.action_search)
     }
 
     override fun onItemClick(info: AppInfo) {
@@ -905,35 +909,62 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.menu_home, menu)
-        val searchView = menu.findItem(R.id.action_search).actionView as SearchView
-        searchView.maxWidth = resources.getDimensionPixelSize(R.dimen.home_search_width)
-        searchView.queryHint = getString(R.string.action_search)
-        searchView.setIconifiedByDefault(false)
-        searchView.isIconified = false
-        searchView.setQuery(query, false)
-        tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
-        searchView.clearFocus()
-        if (HailData.nineKeySearch) {
-            val editText = searchView.findViewById<EditText>(androidx.appcompat.R.id.search_src_text)
-            editText.inputType = InputType.TYPE_CLASS_PHONE
+        val searchInput = activity.homeSearchInput
+        searchTextWatcher?.let(searchInput::removeTextChangedListener)
+        if (searchInput.text.toString() != query) {
+            searchInput.setText(query)
+            searchInput.setSelection(searchInput.text?.length ?: 0)
         }
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextChange(newText: String): Boolean {
-                if (query == newText) return true
+        tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
+        activity.homeSearchBar.isVisible = true
+        activity.homeSearchIcon.setOnClickListener { focusHomeSearch(searchInput) }
+        activity.homeSearchBar.setOnClickListener { focusHomeSearch(searchInput) }
+        setupT9EditText(searchInput, binding.recyclerView)
+        searchTextWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val newText = s?.toString().orEmpty()
+                if (query == newText) return
                 query = newText
                 tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
                 updateCurrentList()
-                return true
             }
 
-            override fun onQueryTextSubmit(query: String): Boolean = true
-        })
+            override fun afterTextChanged(s: Editable?) = Unit
+        }.also(searchInput::addTextChangedListener)
+        updateBarTitle()
         menu.findItem(R.id.action_multiselect).updateIcon()
     }
 
+    override fun onPause() {
+        searchTextWatcher?.let(activity.homeSearchInput::removeTextChangedListener)
+        searchTextWatcher = null
+        clearHomeSearchFocus()
+        super.onPause()
+    }
+
     override fun onDestroyView() {
+        searchTextWatcher?.let(activity.homeSearchInput::removeTextChangedListener)
+        searchTextWatcher = null
         pagerAdapter.onDestroy()
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun focusHomeSearch(searchInput: EditText) {
+        searchInput.requestFocus()
+        if (HailData.nineKeySearch) return
+        searchInput.post {
+            searchInput.context.getSystemService<InputMethodManager>()
+                ?.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun clearHomeSearchFocus() {
+        val searchInput = activity.homeSearchInput
+        searchInput.clearFocus()
+        searchInput.context.getSystemService<InputMethodManager>()
+            ?.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }
 }

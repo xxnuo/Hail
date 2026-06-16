@@ -2,6 +2,9 @@ package com.aistra.hail.ui.main
 
 import android.os.Bundle
 import android.view.Menu
+import android.view.View
+import android.widget.EditText
+import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
@@ -23,6 +26,7 @@ import com.aistra.hail.databinding.ActivityMainBinding
 import com.aistra.hail.extensions.*
 import com.aistra.hail.utils.HPolicy
 import com.aistra.hail.utils.HUI
+import com.aistra.hail.views.T9KeyboardView
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
@@ -30,6 +34,10 @@ import com.google.android.material.floatingactionbutton.ExtendedFloatingActionBu
 class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedListener {
     lateinit var fab: ExtendedFloatingActionButton
     lateinit var appbar: AppBarLayout
+    lateinit var t9Keyboard: T9KeyboardView
+    lateinit var homeSearchBar: View
+    lateinit var homeSearchIcon: ImageView
+    lateinit var homeSearchInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +73,11 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         setSupportActionBar(appBarMain.toolbar)
         fab = appBarMain.fab
         appbar = appBarMain.appBarLayout
+        t9Keyboard = appBarMain.t9Keyboard
+        homeSearchBar = appBarMain.homeSearchBar
+        homeSearchIcon = appBarMain.homeSearchIcon
+        homeSearchInput = appBarMain.homeSearchInput
+        t9Keyboard.applyDefaultInsetter { marginRelative(isRtl, bottom = isLandscape) }
 
         val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
@@ -108,6 +121,7 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         controller: NavController, destination: NavDestination, arguments: Bundle?
     ) {
         fab.tag = destination.id == R.id.nav_home
+        homeSearchBar.isVisible = destination.id == R.id.nav_home
         if (fab.tag == true) fab.show() else fab.hide()
     }
 }
