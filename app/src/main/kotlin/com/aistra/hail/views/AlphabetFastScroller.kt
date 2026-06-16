@@ -1,5 +1,7 @@
 package com.aistra.hail.views
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
@@ -15,6 +17,7 @@ import com.google.android.material.color.MaterialColors
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class AlphabetFastScroller : View {
     enum class Placement { START, END, BOTTOM }
@@ -32,7 +35,9 @@ class AlphabetFastScroller : View {
     private var dispatchedLetter: Char? = null
     private var touchProgress = 0f
     private var waveProgress = 0f
+    private var contentAlpha = 0f
     private var waveAnimator: ValueAnimator? = null
+    private var fadeAnimator: ValueAnimator? = null
     private var placement = Placement.END
 
     var onLetterSelected: ((Char) -> Unit)? = null
@@ -48,7 +53,11 @@ class AlphabetFastScroller : View {
 
     fun setAvailableLetters(value: Collection<Char>) {
         availableLetters = value.map { it.uppercaseChar() }.filter { it in 'A'..'Z' }.toSet()
-        visibility = if (availableLetters.size > 1) VISIBLE else GONE
+        if (availableLetters.size <= 1) {
+            fadeAnimator?.cancel()
+            contentAlpha = 0f
+            visibility = GONE
+        }
         invalidate()
     }
 
@@ -59,17 +68,36 @@ class AlphabetFastScroller : View {
 
     fun showScroller() {
         if (availableLetters.size <= 1) return
+        fadeAnimator?.cancel()
         visibility = VISIBLE
-        animate().cancel()
-        animate().alpha(1f).setStartDelay(0L).setDuration(120L).start()
+        alpha = 1f
+        fadeAnimator = ValueAnimator.ofFloat(contentAlpha, 1f).apply {
+            duration = 120L
+            addUpdateListener {
+                contentAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
     }
 
     fun hideScroller(delayMillis: Long = 700L) {
         if (visibility != VISIBLE) return
-        animate().cancel()
-        animate().alpha(0f).setStartDelay(delayMillis).setDuration(180L).withEndAction {
-            if (alpha == 0f) visibility = GONE
-        }.start()
+        fadeAnimator?.cancel()
+        fadeAnimator = ValueAnimator.ofFloat(contentAlpha, 0f).apply {
+            startDelay = delayMillis
+            duration = 180L
+            addUpdateListener {
+                contentAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (contentAlpha == 0f) visibility = GONE
+                }
+            })
+            start()
+        }
     }
 
     override fun onAttachedToWindow() {
@@ -80,6 +108,14 @@ class AlphabetFastScroller : View {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (availableLetters.isEmpty()) return
+        if (contentAlpha <= 0f) return
+        val layer = canvas.saveLayerAlpha(
+            0f,
+            0f,
+            width.toFloat(),
+            height.toFloat(),
+            (contentAlpha * 255).roundToInt().coerceIn(0, 255)
+        )
         val horizontal = placement == Placement.BOTTOM
         val cellSize = (if (horizontal) width else height) / letters.size.toFloat()
         val trackSize = min(if (horizontal) height.toFloat() else width.toFloat(), cellSize)
@@ -125,6 +161,7 @@ class AlphabetFastScroller : View {
             canvas.drawText(letter.toString(), centerX, centerY - (paint.ascent() + paint.descent()) / 2f, paint)
             paint.textSize = originalTextSize
         }
+        canvas.restoreToCount(layer)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
