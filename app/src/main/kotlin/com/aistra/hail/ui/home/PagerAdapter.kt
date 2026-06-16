@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.Space
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -20,61 +21,103 @@ import kotlinx.coroutines.Job
 
 class PagerAdapter(
     private val selectedList: List<AppInfo>,
-    private val flags: MutableMap<String, Int> = mutableMapOf()
-) : ListAdapter<AppInfo, PagerAdapter.ViewHolder>(HomeDiff(selectedList, flags)) {
+    private val flags: MutableMap<String, Int> = mutableMapOf(),
+    private val states: MutableMap<String, AppInfo.State> = mutableMapOf()
+) : ListAdapter<PagerAdapter.Item, PagerAdapter.ViewHolder>(HomeDiff(selectedList, flags, states)) {
     private var loadIconJob: Job? = null
     private var activeLetter: Char? = null
+    private var tailSpacerHeight: Int = 0
+    var appList: List<AppInfo> = emptyList()
+        private set
+    var appEntries: List<AppEntry> = emptyList()
+        private set
+    var sectionPositions: Map<Char, Int> = emptyMap()
+        private set
     lateinit var onItemClickListener: OnItemClickListener
     lateinit var onItemLongClickListener: OnItemLongClickListener
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder = ViewHolder(
-        LayoutInflater.from(parent.context).inflate(R.layout.item_home, parent, false)
-    )
+    override fun getItemViewType(position: Int): Int = when (currentList[position]) {
+        is Item.App -> VIEW_TYPE_APP
+        is Item.Spacer -> VIEW_TYPE_SPACER
+        is Item.TailSpacer -> VIEW_TYPE_TAIL_SPACER
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
+        when (viewType) {
+            VIEW_TYPE_APP -> ViewHolder(LayoutInflater.from(parent.context).inflate(R.layout.item_home, parent, false))
+            VIEW_TYPE_TAIL_SPACER -> ViewHolder(Space(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, tailSpacerHeight)
+            })
+            else -> ViewHolder(Space(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0)
+            })
+        }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.any { it == PAYLOAD_STATE }) {
+            val item = currentList[position]
+            if (item is Item.App) {
+                val info = item.entry.info
+                val state = stateOf(info.packageName)
+                flags[info.packageName] = info.getFlag(selectedList, state)
+                holder.bindState(info, state, info in selectedList)
+            }
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val info = currentList[position]
-        flags[info.packageName] = info.getFlag(selectedList)
+        val item = currentList[position]
+        if (item !is Item.App) return
+        val entry = item.entry
+        val info = entry.info
+        val state = stateOf(info.packageName)
+        val name = info.name
+        holder.name = name
+        flags[info.packageName] = info.getFlag(selectedList, state)
         holder.itemView.run {
             alpha = activeLetter?.let {
-                if (AlphabetIndex.startsWithLetter(info.name, it)) 1f else 0.28f
+                if (entry.primaryLetter == it) 1f else 0.28f
             } ?: 1f
             setOnClickListener { onItemClickListener.onItemClick(info) }
             setOnLongClickListener { onItemLongClickListener.onItemLongClick(info) }
-            findViewById<ImageView>(R.id.app_icon).run {
+            holder.appIcon?.run {
                 info.applicationInfo?.let {
                     loadIconJob = AppIconCache.loadIconBitmapAsync(
-                        context,
-                        it,
-                        myUserId,
-                        this,
-                        HailData.grayscaleIcon && info.state == AppInfo.State.FROZEN
+                        context, it, myUserId, this, HailData.grayscaleIcon && state == AppInfo.State.FROZEN
                     )
                 } ?: run {
                     setImageDrawable(context.packageManager.defaultActivityIcon)
                     colorFilter = null
                 }
             }
-            findViewById<TextView>(R.id.app_name).run {
-                text = buildString {
-                    if (!HailData.grayscaleIcon && info.state == AppInfo.State.FROZEN) append("\u2744\uFE0F")
-                    if (info.whitelisted) append("\uD83D\uDD12")
-                    append(info.name)
-                }
-                isEnabled = !HailData.grayscaleIcon || info.state != AppInfo.State.FROZEN
-                when {
-                    info in selectedList -> setTextColor(
-                        MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
-                    )
-
-                    info.state == AppInfo.State.NOT_FOUND -> setTextColor(
-                        MaterialColors.getColor(this, androidx.appcompat.R.attr.colorError)
-                    )
-
-                    else -> setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
-                }
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, HailData.homeFontSize)
-            }
+            holder.bindState(info, state, info in selectedList)
         }
+    }
+
+    fun setStateSnapshot(snapshot: Map<String, AppInfo.State>) {
+        states.clear()
+        states.putAll(snapshot)
+    }
+
+    fun updateStateSnapshot(snapshot: Map<String, AppInfo.State>, changedPackages: Collection<String>? = null) {
+        setStateSnapshot(snapshot)
+        if (itemCount == 0) return
+        val changed = changedPackages?.toSet()
+        if (changed == null) notifyItemRangeChanged(0, itemCount, PAYLOAD_STATE)
+        else currentList.forEachIndexed { index, item ->
+            if (item is Item.App && item.entry.info.packageName in changed) notifyItemChanged(index, PAYLOAD_STATE)
+        }
+    }
+
+    fun submitAppEntries(entries: List<AppEntry>, spanCount: Int, tailSpacerRows: Int, tailSpacerHeight: Int) {
+        appEntries = entries
+        appList = entries.map { it.info }
+        this.tailSpacerHeight = tailSpacerHeight
+        val positions = mutableMapOf<Char, Int>()
+        submitList(buildItems(entries, spanCount, tailSpacerRows, positions))
+        sectionPositions = positions
     }
 
     fun setActiveLetter(letter: Char?) {
@@ -87,16 +130,117 @@ class PagerAdapter(
         if (loadIconJob?.isActive == true) loadIconJob?.cancel()
     }
 
-    private class HomeDiff(
-        private val selectedList: List<AppInfo>, private val flags: Map<String, Int>
-    ) : DiffUtil.ItemCallback<AppInfo>() {
-        override fun areItemsTheSame(oldItem: AppInfo, newItem: AppInfo): Boolean = oldItem == newItem
+    private fun stateOf(packageName: String) = states[packageName] ?: AppInfo.State.UNFROZEN
 
-        override fun areContentsTheSame(oldItem: AppInfo, newItem: AppInfo): Boolean =
-            flags[oldItem.packageName] == newItem.getFlag(selectedList)
+    private fun buildItems(
+        entries: List<AppEntry>,
+        spanCount: Int,
+        tailSpacerRows: Int,
+        positions: MutableMap<Char, Int>
+    ): List<Item> {
+        val safeSpanCount = spanCount.coerceAtLeast(1)
+        val items = mutableListOf<Item>()
+        var currentLetter: Char? = null
+        var currentSectionStart = RecyclerView.NO_POSITION
+        entries.forEach { entry ->
+            val letter = entry.primaryLetter
+            if (items.isNotEmpty() && letter != currentLetter) {
+                val remainder = items.size % safeSpanCount
+                if (remainder != 0) {
+                    repeat(safeSpanCount - remainder) {
+                        items.add(Item.Spacer("${currentLetter ?: "#"}-${letter ?: "#"}-${items.size}"))
+                    }
+                }
+            }
+            if (letter != currentLetter) {
+                currentLetter = letter
+                currentSectionStart = items.size
+                if (letter != null) positions.putIfAbsent(letter, currentSectionStart)
+            }
+            entry.sectionStartPosition = currentSectionStart
+            items.add(Item.App(entry))
+        }
+        if (items.isNotEmpty()) {
+            repeat(tailSpacerRows.coerceAtLeast(1) * safeSpanCount) {
+                items.add(Item.TailSpacer("tail-$it"))
+            }
+        }
+        return items
     }
 
-    class ViewHolder(view: View) : RecyclerView.ViewHolder(view)
+    private class HomeDiff(
+        private val selectedList: List<AppInfo>,
+        private val flags: Map<String, Int>,
+        private val states: Map<String, AppInfo.State>
+    ) : DiffUtil.ItemCallback<Item>() {
+        override fun areItemsTheSame(oldItem: Item, newItem: Item): Boolean = when {
+            oldItem is Item.App && newItem is Item.App -> oldItem.entry.info == newItem.entry.info
+            oldItem is Item.Spacer && newItem is Item.Spacer -> oldItem.key == newItem.key
+            oldItem is Item.TailSpacer && newItem is Item.TailSpacer -> oldItem.key == newItem.key
+            else -> false
+        }
+
+        override fun areContentsTheSame(oldItem: Item, newItem: Item): Boolean = when {
+            oldItem is Item.App && newItem is Item.App ->
+                flags[oldItem.entry.info.packageName] == newItem.entry.info.getFlag(
+                    selectedList,
+                    states[newItem.entry.info.packageName] ?: AppInfo.State.UNFROZEN
+                )
+                        && oldItem.entry.primaryLetter == newItem.entry.primaryLetter
+                        && oldItem.entry.sortKey == newItem.entry.sortKey
+                        && oldItem.entry.sectionStartPosition == newItem.entry.sectionStartPosition
+
+            oldItem is Item.Spacer && newItem is Item.Spacer -> true
+            oldItem is Item.TailSpacer && newItem is Item.TailSpacer -> true
+            else -> false
+        }
+    }
+
+    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val appIcon: ImageView? = view.findViewById(R.id.app_icon)
+        val appName: TextView? = view.findViewById(R.id.app_name)
+        var name: CharSequence? = null
+
+        fun bindState(info: AppInfo, state: AppInfo.State, selected: Boolean) {
+            val icon = appIcon ?: return
+            val textView = appName ?: return
+            val appNameText = name ?: info.name.also { name = it }
+            AppIconCache.setGrayscale(icon, HailData.grayscaleIcon && state == AppInfo.State.FROZEN)
+            textView.run {
+                text = buildString {
+                    if (!HailData.grayscaleIcon && state == AppInfo.State.FROZEN) append("\u2744\uFE0F")
+                    if (info.whitelisted) append("\uD83D\uDD12")
+                    append(appNameText)
+                }
+                isEnabled = !HailData.grayscaleIcon || state != AppInfo.State.FROZEN
+                when {
+                    selected -> setTextColor(
+                        MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
+                    )
+
+                    state == AppInfo.State.NOT_FOUND -> setTextColor(
+                        MaterialColors.getColor(this, androidx.appcompat.R.attr.colorError)
+                    )
+
+                    else -> setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                }
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, HailData.homeFontSize)
+            }
+        }
+    }
+
+    data class AppEntry(
+        val info: AppInfo,
+        val primaryLetter: Char?,
+        val sortKey: String,
+        var sectionStartPosition: Int = RecyclerView.NO_POSITION
+    )
+
+    sealed interface Item {
+        data class App(val entry: AppEntry) : Item
+        data class Spacer(val key: String) : Item
+        data class TailSpacer(val key: String) : Item
+    }
 
     interface OnItemClickListener {
         fun onItemClick(info: AppInfo)
@@ -105,9 +249,16 @@ class PagerAdapter(
     interface OnItemLongClickListener {
         fun onItemLongClick(info: AppInfo): Boolean
     }
+
+    companion object {
+        private const val VIEW_TYPE_APP = 0
+        private const val VIEW_TYPE_SPACER = 1
+        private const val VIEW_TYPE_TAIL_SPACER = 2
+        private const val PAYLOAD_STATE = "state"
+    }
 }
 
-private fun AppInfo.getFlag(selectedList: List<AppInfo>) =
+private fun AppInfo.getFlag(selectedList: List<AppInfo>, state: AppInfo.State) =
     (1 shl state.ordinal) or (this in selectedList).shl(3) or whitelisted.shl(4)
 
 private fun Boolean.shl(bitCount: Int) = if (this) 1 shl bitCount else 0

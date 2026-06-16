@@ -1,13 +1,16 @@
 package com.aistra.hail.views
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.util.TypedValue
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import com.google.android.material.color.MaterialColors
 import kotlin.math.min
 
@@ -23,6 +26,9 @@ class AlphabetFastScroller : View {
     private var availableLetters = emptySet<Char>()
     private var selectedLetter: Char? = null
     private var dispatchedLetter: Char? = null
+    private var touchProgress = 0f
+    private var waveProgress = 0f
+    private var waveAnimator: ValueAnimator? = null
 
     var onLetterSelected: ((Char) -> Unit)? = null
     var onLetterCleared: (() -> Unit)? = null
@@ -58,11 +64,15 @@ class AlphabetFastScroller : View {
             val centerY = cellHeight * index + cellHeight / 2f
             val available = letter in availableLetters
             val selected = letter == selectedLetter && available
+            val distance = kotlin.math.abs(index - touchProgress)
+            val influence = ((3f - distance) / 3f).coerceIn(0f, 1f) * waveProgress
+            val scale = 1f + 0.55f * influence
+            val shift = -width * 0.28f * influence
             if (selected) {
                 canvas.drawCircle(
-                    width / 2f,
+                    width / 2f + shift,
                     centerY,
-                    min(width.toFloat(), cellHeight) * 0.42f,
+                    min(width.toFloat(), cellHeight) * 0.46f,
                     selectedBackgroundPaint
                 )
             }
@@ -71,7 +81,10 @@ class AlphabetFastScroller : View {
                 available -> enabledPaint
                 else -> disabledPaint
             }
-            canvas.drawText(letter.toString(), width / 2f, centerY - (paint.ascent() + paint.descent()) / 2f, paint)
+            val originalTextSize = paint.textSize
+            paint.textSize = originalTextSize * scale
+            canvas.drawText(letter.toString(), width / 2f + shift, centerY - (paint.ascent() + paint.descent()) / 2f, paint)
+            paint.textSize = originalTextSize
         }
     }
 
@@ -80,7 +93,10 @@ class AlphabetFastScroller : View {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent.requestDisallowInterceptTouchEvent(true)
+                waveAnimator?.cancel()
+                waveProgress = 1f
                 updateSelectedLetter(event.y)
+                invalidate()
                 return true
             }
 
@@ -90,11 +106,10 @@ class AlphabetFastScroller : View {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                selectedLetter = null
                 dispatchedLetter = null
                 parent.requestDisallowInterceptTouchEvent(false)
                 onLetterCleared?.invoke()
-                invalidate()
+                fadeOutWave()
                 if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
                 return true
             }
@@ -108,8 +123,9 @@ class AlphabetFastScroller : View {
     }
 
     private fun updateSelectedLetter(y: Float) {
-        val index = ((y.coerceIn(0f, height - 1f) / height) * letters.size).toInt()
-            .coerceIn(0, letters.lastIndex)
+        touchProgress = ((y.coerceIn(0f, height - 1f) / height) * letters.size)
+            .coerceIn(0f, letters.lastIndex.toFloat())
+        val index = touchProgress.toInt().coerceIn(0, letters.lastIndex)
         val letter = letters[index]
         if (selectedLetter != letter) {
             selectedLetter = letter
@@ -117,10 +133,25 @@ class AlphabetFastScroller : View {
         }
         if (letter in availableLetters && dispatchedLetter != letter) {
             dispatchedLetter = letter
+            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             onLetterSelected?.invoke(letter)
         } else if (letter !in availableLetters && dispatchedLetter != null) {
             dispatchedLetter = null
             onLetterCleared?.invoke()
+        }
+    }
+
+    private fun fadeOutWave() {
+        waveAnimator?.cancel()
+        waveAnimator = ValueAnimator.ofFloat(waveProgress, 0f).apply {
+            duration = 180L
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                waveProgress = it.animatedValue as Float
+                if (waveProgress == 0f) selectedLetter = null
+                invalidate()
+            }
+            start()
         }
     }
 

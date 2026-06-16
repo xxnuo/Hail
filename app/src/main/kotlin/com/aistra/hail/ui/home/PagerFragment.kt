@@ -33,6 +33,7 @@ import com.aistra.hail.HailApp.Companion.app
 import com.aistra.hail.R
 import com.aistra.hail.app.AppInfo
 import com.aistra.hail.app.AppManager
+import com.aistra.hail.app.AppStateCache
 import com.aistra.hail.app.HailApi
 import com.aistra.hail.app.HailApi.addTag
 import com.aistra.hail.app.HailData
@@ -51,6 +52,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.text.Collator
 
 class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAdapter.OnItemLongClickListener,
     MenuProvider {
@@ -60,6 +62,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private lateinit var pagerAdapter: PagerAdapter
     private var fastScrollPositions: Map<Char, Int> = emptyMap()
     private var pendingCurrentListUpdate = false
+    private val nameCollator = Collator.getInstance()
     private var multiselect: Boolean
         set(value) {
             (parentFragment as HomeFragment).multiselect = value
@@ -117,6 +120,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             onLetterCleared = { pagerAdapter.setActiveLetter(null) }
             applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
         }
+        AppStateCache.version.observe(viewLifecycleOwner) {
+            updateStateSnapshot()
+            app.setAutoFreezeService()
+        }
         return binding.root
     }
 
@@ -152,7 +159,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             true
         }
         activity.fab.setOnClickListener {
-            setListFrozen(true, pagerAdapter.currentList.filterNot { it.whitelisted })
+            setListFrozen(true, pagerAdapter.appList.filterNot { it.whitelisted })
         }
         activity.fab.setOnLongClickListener {
             setListFrozen(true)
@@ -167,37 +174,46 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         )) || FuzzySearch.search(it.packageName, query) || FuzzySearch.search(
             it.name.toString(), query
         ) || PinyinSearch.searchPinyinAll(it.name.toString(), query))
-    }.sortedWith(NameComparator).let {
+    }.map {
+        PagerAdapter.AppEntry(
+            info = it,
+            primaryLetter = AlphabetIndex.primaryLetter(it.name),
+            sortKey = AlphabetIndex.sortKey(it.name)
+        )
+    }.sortedWith(::compareAppEntries).let {
         binding.empty.isVisible = it.isEmpty()
-        pagerAdapter.submitList(it)
-        updateFastScroller(it)
+        val packages = it.map { entry -> entry.info.packageName }
+        pagerAdapter.setStateSnapshot(AppStateCache.statesFor(packages))
+        val spanCount = (binding.recyclerView.layoutManager as? GridLayoutManager)?.spanCount ?: 1
+        pagerAdapter.submitAppEntries(
+            it,
+            spanCount,
+            tailSpacerRows = 1,
+            tailSpacerHeight = binding.recyclerView.height.takeIf { height -> height > 0 }
+                ?: resources.displayMetrics.heightPixels
+        )
+        AppStateCache.primeAsync(packages)
+        updateFastScroller()
         app.setAutoFreezeService()
     }
 
-    private fun updateFastScroller(list: List<AppInfo>) {
-        val positions = mutableMapOf<Char, Int>()
-        val letters = list.map { AlphabetIndex.primaryLetter(it.name) }
-        val spanCount = (binding.recyclerView.layoutManager as? GridLayoutManager)?.spanCount ?: 1
-        letters.forEachIndexed { index, letter ->
-            letter ?: return@forEachIndexed
-            if (letter in positions) return@forEachIndexed
-            positions[letter] = findFastScrollPosition(letters, letter, index, spanCount)
+    private fun compareAppEntries(a: PagerAdapter.AppEntry, b: PagerAdapter.AppEntry): Int = when {
+        a.info.pinned && !b.info.pinned -> -1
+        b.info.pinned && !a.info.pinned -> 1
+        else -> {
+            val keyResult = a.sortKey.compareTo(b.sortKey, true)
+            if (keyResult != 0) keyResult else nameCollator.compare(a.info.name, b.info.name)
         }
-        fastScrollPositions = positions
-        binding.fastScroller.setAvailableLetters(positions.keys)
     }
 
-    private fun findFastScrollPosition(
-        letters: List<Char?>,
-        letter: Char,
-        firstPosition: Int,
-        spanCount: Int
-    ): Int {
-        val firstRowStart = firstPosition - firstPosition % spanCount
-        if (letters.getOrNull(firstRowStart) == letter) return firstRowStart
-        var position = firstRowStart + spanCount
-        while (position < letters.size && letters[position] == letter) return position
-        return firstPosition
+    private fun updateStateSnapshot(changedPackages: Collection<String>? = null) {
+        val packages = pagerAdapter.appList.map { it.packageName }
+        pagerAdapter.updateStateSnapshot(AppStateCache.statesFor(packages), changedPackages)
+    }
+
+    private fun updateFastScroller() {
+        fastScrollPositions = pagerAdapter.sectionPositions
+        binding.fastScroller.setAvailableLetters(fastScrollPositions.keys)
     }
 
     private fun scrollToLetter(letter: Char) {
@@ -239,7 +255,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             return true
         }
         val pkg = info.packageName
-        val frozen = AppManager.isAppFrozen(pkg)
+        val frozen = AppStateCache.stateOrRefresh(pkg) == AppInfo.State.FROZEN
         val action = getString(if (frozen) R.string.action_unfreeze else R.string.action_freeze)
         MaterialAlertDialogBuilder(activity).setTitle(info.name).setItems(
             resources.getStringArray(R.array.home_action_entries).filter {
@@ -307,7 +323,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 8 -> removeCheckedApp(pkg)
                 9 -> {
                     setListFrozen(false, listOf(info), false) {
-                        if (!AppManager.isAppFrozen(pkg)) removeCheckedApp(pkg)
+                        if (AppStateCache.stateOf(pkg) != AppInfo.State.FROZEN) removeCheckedApp(pkg)
                     }
                 }
             }
@@ -390,7 +406,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     val selected = selectedList.toList()
                     setListFrozen(false, selected, false) {
                         selected.forEach {
-                            if (!AppManager.isAppFrozen(it.packageName)) removeCheckedApp(it.packageName, false)
+                            if (AppStateCache.stateOf(it.packageName) != AppInfo.State.FROZEN) removeCheckedApp(
+                                it.packageName,
+                                false
+                            )
                         }
                         HailData.saveApps()
                         deselect()
@@ -400,7 +419,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }.setNegativeButton(R.string.action_deselect) { _, _ ->
             deselect()
         }.setNeutralButton(R.string.action_select_all) { _, _ ->
-            selectedList.addAll(pagerAdapter.currentList.filterNot { it in selectedList })
+            selectedList.addAll(pagerAdapter.appList.filterNot { it in selectedList })
             updateCurrentList()
             updateBarTitle()
             onMultiSelect()
@@ -473,8 +492,12 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun launchApp(packageName: String) {
-        if (AppManager.isAppFrozen(packageName) && AppManager.setAppFrozen(packageName, false)) {
-            updateCurrentList()
+        if (AppStateCache.stateOrRefresh(packageName) == AppInfo.State.FROZEN && AppManager.setAppFrozen(
+                packageName,
+                false
+            )
+        ) {
+            updateStateSnapshot(listOf(packageName))
         }
         app.packageManager.getLaunchIntentForPackage(packageName)?.let {
             HShortcuts.addDynamicShortcut(packageName)
@@ -505,19 +528,32 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         viewLifecycleOwner.lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    val filtered = targetList.filter { AppManager.isAppFrozen(it.packageName) != frozen }
-                    AppManager.setListFrozen(frozen, *filtered.toTypedArray())
+                    val targetState = if (frozen) AppInfo.State.FROZEN else AppInfo.State.UNFROZEN
+                    val filtered = targetList.filter {
+                        when (AppStateCache.stateOf(it.packageName)) {
+                            null -> true
+                            AppInfo.State.NOT_FOUND -> false
+                            targetState -> false
+                            else -> true
+                        }
+                    }
+                    AppManager.setListFrozenResult(frozen, *filtered.toTypedArray())
                 }
             }.getOrElse {
                 HLog.e(it)
                 null
             }
-            when (result) {
+            when (val toastArg = result?.toastArg) {
                 null -> HUI.showToast(R.string.permission_denied)
                 else -> {
-                    if (updateList) requestCurrentListUpdate()
+                    if (result.successPackages.isNotEmpty()) {
+                        updateStateSnapshot(result.successPackages)
+                        app.setAutoFreezeService()
+                    } else if (updateList) {
+                        updateStateSnapshot()
+                    }
                     HUI.showToast(
-                        if (frozen) R.string.msg_freeze else R.string.msg_unfreeze, result
+                        if (frozen) R.string.msg_freeze else R.string.msg_unfreeze, toastArg
                     )
                 }
             }
@@ -545,7 +581,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     val oldTagId = HailData.tags[position].second
                     HailData.tags[position] = tagName to if (defaultTab) 0 else tagId
                     if (!defaultTab) {
-                        pagerAdapter.currentList.forEach {
+                        pagerAdapter.appList.forEach {
                             val index = it.tagIdList.indexOf(oldTagId)
                             if (index != -1) it.tagIdList[index] = tagId
                         }
@@ -559,7 +595,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (list != null || position == 0) return@apply
                 setNeutralButton(R.string.action_tag_remove) { _, _ ->
                     val tagIdToRemove = HailData.tags[position].second
-                    pagerAdapter.currentList.forEach {
+                    pagerAdapter.appList.forEach {
                         if (it.tagIdList.remove(tagIdToRemove) && it.tagIdList.isEmpty()) {
                             removeCheckedApp(it.packageName, false)
                         }
@@ -636,9 +672,9 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 } else deselect()
             }
 
-            R.id.action_freeze_current -> setListFrozen(true, pagerAdapter.currentList.filterNot { it.whitelisted })
+            R.id.action_freeze_current -> setListFrozen(true, pagerAdapter.appList.filterNot { it.whitelisted })
 
-            R.id.action_unfreeze_current -> setListFrozen(false, pagerAdapter.currentList)
+            R.id.action_unfreeze_current -> setListFrozen(false, pagerAdapter.appList)
             R.id.action_freeze_all -> setListFrozen(true)
             R.id.action_unfreeze_all -> setListFrozen(false)
             R.id.action_freeze_non_whitelisted -> setListFrozen(true, HailData.checkedList.filterNot { it.whitelisted })
@@ -653,7 +689,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 HUI.showToast(getString(R.string.msg_imported, size.toString()))
             }
 
-            R.id.action_export_current -> exportToClipboard(pagerAdapter.currentList)
+            R.id.action_export_current -> exportToClipboard(pagerAdapter.appList)
             R.id.action_export_all -> exportToClipboard(HailData.checkedList)
         }
         return false
@@ -662,18 +698,21 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.menu_home, menu)
         val searchView = menu.findItem(R.id.action_search).actionView as SearchView
+        searchView.maxWidth = resources.getDimensionPixelSize(R.dimen.home_search_width)
+        searchView.queryHint = getString(R.string.action_search)
+        searchView.setIconifiedByDefault(false)
+        searchView.isIconified = false
+        searchView.clearFocus()
         if (HailData.nineKeySearch) {
             val editText = searchView.findViewById<EditText>(androidx.appcompat.R.id.search_src_text)
             editText.inputType = InputType.TYPE_CLASS_PHONE
         }
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            private var inited = false
             override fun onQueryTextChange(newText: String): Boolean {
-                if (inited) {
-                    query = newText
-                    tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
-                    updateCurrentList()
-                } else inited = true
+                if (query == newText) return true
+                query = newText
+                tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
+                updateCurrentList()
                 return true
             }
 
