@@ -12,9 +12,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.google.android.material.color.MaterialColors
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 
 class AlphabetFastScroller : View {
+    enum class Placement { START, END, BOTTOM }
+
     private val letters = ('A'..'Z').toList()
     private val enabledPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -29,6 +33,7 @@ class AlphabetFastScroller : View {
     private var touchProgress = 0f
     private var waveProgress = 0f
     private var waveAnimator: ValueAnimator? = null
+    private var placement = Placement.END
 
     var onLetterSelected: ((Char) -> Unit)? = null
     var onLetterCleared: (() -> Unit)? = null
@@ -47,6 +52,26 @@ class AlphabetFastScroller : View {
         invalidate()
     }
 
+    fun setPlacement(value: Placement) {
+        placement = value
+        invalidate()
+    }
+
+    fun showScroller() {
+        if (availableLetters.size <= 1) return
+        visibility = VISIBLE
+        animate().cancel()
+        animate().alpha(1f).setStartDelay(0L).setDuration(120L).start()
+    }
+
+    fun hideScroller(delayMillis: Long = 700L) {
+        if (visibility != VISIBLE) return
+        animate().cancel()
+        animate().alpha(0f).setStartDelay(delayMillis).setDuration(180L).withEndAction {
+            if (alpha == 0f) visibility = GONE
+        }.start()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         updateColors()
@@ -55,24 +80,38 @@ class AlphabetFastScroller : View {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (availableLetters.isEmpty()) return
-        val cellHeight = height / letters.size.toFloat()
-        val textSize = (cellHeight * 0.58f).coerceIn(7f.sp, 12f.sp)
+        val horizontal = placement == Placement.BOTTOM
+        val cellSize = (if (horizontal) width else height) / letters.size.toFloat()
+        val trackSize = min(if (horizontal) height.toFloat() else width.toFloat(), cellSize)
+        val textSize = (trackSize * 0.58f).coerceIn(7f.sp, 12f.sp)
         enabledPaint.textSize = textSize
         disabledPaint.textSize = textSize
         selectedTextPaint.textSize = textSize
         letters.forEachIndexed { index, letter ->
-            val centerY = cellHeight * index + cellHeight / 2f
+            val baseX = if (horizontal) cellSize * index + cellSize / 2f else width / 2f
+            val baseY = if (horizontal) height / 2f else cellSize * index + cellSize / 2f
             val available = letter in availableLetters
             val selected = letter == selectedLetter && available
-            val distance = kotlin.math.abs(index - touchProgress)
+            val distance = abs(index - touchProgress)
             val influence = ((3f - distance) / 3f).coerceIn(0f, 1f) * waveProgress
             val scale = 1f + 0.55f * influence
-            val shift = -width * 0.28f * influence
+            val shift = when (placement) {
+                Placement.START -> width * 0.28f * influence
+                Placement.END -> -width * 0.28f * influence
+                Placement.BOTTOM -> -height * 0.22f * influence
+            }
+            val radius = trackSize * 0.42f
+            val centerX = if (horizontal) baseX else (baseX + shift).coerceIn(radius, width - radius)
+            val centerY = if (horizontal) {
+                (baseY + shift).coerceIn(radius, height - radius)
+            } else {
+                baseY.coerceIn(radius, height - radius)
+            }
             if (selected) {
                 canvas.drawCircle(
-                    width / 2f + shift,
+                    centerX,
                     centerY,
-                    min(width.toFloat(), cellHeight) * 0.46f,
+                    radius,
                     selectedBackgroundPaint
                 )
             }
@@ -83,7 +122,7 @@ class AlphabetFastScroller : View {
             }
             val originalTextSize = paint.textSize
             paint.textSize = originalTextSize * scale
-            canvas.drawText(letter.toString(), width / 2f + shift, centerY - (paint.ascent() + paint.descent()) / 2f, paint)
+            canvas.drawText(letter.toString(), centerX, centerY - (paint.ascent() + paint.descent()) / 2f, paint)
             paint.textSize = originalTextSize
         }
     }
@@ -95,6 +134,7 @@ class AlphabetFastScroller : View {
                 parent.requestDisallowInterceptTouchEvent(true)
                 waveAnimator?.cancel()
                 waveProgress = 1f
+                showScroller()
                 updateSelectedLetter(event.y)
                 invalidate()
                 return true
@@ -110,6 +150,7 @@ class AlphabetFastScroller : View {
                 parent.requestDisallowInterceptTouchEvent(false)
                 onLetterCleared?.invoke()
                 fadeOutWave()
+                hideScroller(360L)
                 if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
                 return true
             }
@@ -122,8 +163,10 @@ class AlphabetFastScroller : View {
         return true
     }
 
-    private fun updateSelectedLetter(y: Float) {
-        touchProgress = ((y.coerceIn(0f, height - 1f) / height) * letters.size)
+    private fun updateSelectedLetter(eventY: Float) {
+        val length = max(if (placement == Placement.BOTTOM) width else height, 1)
+        val position = if (placement == Placement.BOTTOM) lastTouchX else eventY
+        touchProgress = ((position.coerceIn(0f, length - 1f) / length) * letters.size)
             .coerceIn(0f, letters.lastIndex.toFloat())
         val index = touchProgress.toInt().coerceIn(0, letters.lastIndex)
         val letter = letters[index]
@@ -139,6 +182,14 @@ class AlphabetFastScroller : View {
             dispatchedLetter = null
             onLetterCleared?.invoke()
         }
+    }
+
+    private val lastTouchX: Float get() = recentX
+    private var recentX: Float = 0f
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        recentX = event.x
+        return super.dispatchTouchEvent(event)
     }
 
     private fun fadeOutWave() {

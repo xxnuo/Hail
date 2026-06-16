@@ -38,6 +38,7 @@ class PagerAdapter(
 
     override fun getItemViewType(position: Int): Int = when (currentList[position]) {
         is Item.App -> VIEW_TYPE_APP
+        is Item.Header -> VIEW_TYPE_HEADER
         is Item.Spacer -> VIEW_TYPE_SPACER
         is Item.TailSpacer -> VIEW_TYPE_TAIL_SPACER
     }
@@ -45,6 +46,20 @@ class PagerAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
         when (viewType) {
             VIEW_TYPE_APP -> ViewHolder(LayoutInflater.from(parent.context).inflate(R.layout.item_home, parent, false))
+            VIEW_TYPE_HEADER -> ViewHolder(TextView(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(
+                    resources.getDimensionPixelSize(R.dimen.padding_medium),
+                    resources.getDimensionPixelSize(R.dimen.padding_medium),
+                    resources.getDimensionPixelSize(R.dimen.padding_medium),
+                    resources.getDimensionPixelSize(R.dimen.padding_extra_small)
+                )
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+                setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            })
             VIEW_TYPE_TAIL_SPACER -> ViewHolder(Space(parent.context).apply {
                 layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, tailSpacerHeight)
             })
@@ -69,6 +84,10 @@ class PagerAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = currentList[position]
+        if (item is Item.Header) {
+            (holder.itemView as? TextView)?.text = item.letter.toString()
+            return
+        }
         if (item !is Item.App) return
         val entry = item.entry
         val info = entry.info
@@ -120,6 +139,10 @@ class PagerAdapter(
         sectionPositions = positions
     }
 
+    fun isFullSpan(position: Int): Boolean = currentList.getOrNull(position).let {
+        it is Item.Header || it is Item.TailSpacer
+    }
+
     fun setActiveLetter(letter: Char?) {
         if (activeLetter == letter) return
         activeLetter = letter
@@ -141,26 +164,35 @@ class PagerAdapter(
         val safeSpanCount = spanCount.coerceAtLeast(1)
         val items = mutableListOf<Item>()
         var currentLetter: Char? = null
-        var currentSectionStart = RecyclerView.NO_POSITION
+        var spanCursor = 0
         entries.forEach { entry ->
             val letter = entry.primaryLetter
             if (items.isNotEmpty() && letter != currentLetter) {
-                val remainder = items.size % safeSpanCount
-                if (remainder != 0) {
-                    repeat(safeSpanCount - remainder) {
+                if (spanCursor != 0) {
+                    repeat(safeSpanCount - spanCursor) {
                         items.add(Item.Spacer("${currentLetter ?: "#"}-${letter ?: "#"}-${items.size}"))
                     }
+                    spanCursor = 0
                 }
             }
             if (letter != currentLetter) {
                 currentLetter = letter
-                currentSectionStart = items.size
-                if (letter != null) positions.putIfAbsent(letter, currentSectionStart)
+                if (letter != null) {
+                    items.add(Item.Header(letter))
+                    spanCursor = 0
+                }
             }
-            entry.sectionStartPosition = currentSectionStart
+            entry.sectionStartPosition = items.size
+            if (letter != null) positions.putIfAbsent(letter, entry.sectionStartPosition)
             items.add(Item.App(entry))
+            spanCursor = (spanCursor + 1) % safeSpanCount
         }
         if (items.isNotEmpty()) {
+            if (spanCursor != 0) {
+                repeat(safeSpanCount - spanCursor) {
+                    items.add(Item.Spacer("tail-align-$it"))
+                }
+            }
             repeat(tailSpacerRows.coerceAtLeast(1) * safeSpanCount) {
                 items.add(Item.TailSpacer("tail-$it"))
             }
@@ -175,6 +207,7 @@ class PagerAdapter(
     ) : DiffUtil.ItemCallback<Item>() {
         override fun areItemsTheSame(oldItem: Item, newItem: Item): Boolean = when {
             oldItem is Item.App && newItem is Item.App -> oldItem.entry.info == newItem.entry.info
+            oldItem is Item.Header && newItem is Item.Header -> oldItem.letter == newItem.letter
             oldItem is Item.Spacer && newItem is Item.Spacer -> oldItem.key == newItem.key
             oldItem is Item.TailSpacer && newItem is Item.TailSpacer -> oldItem.key == newItem.key
             else -> false
@@ -190,6 +223,7 @@ class PagerAdapter(
                         && oldItem.entry.sortKey == newItem.entry.sortKey
                         && oldItem.entry.sectionStartPosition == newItem.entry.sectionStartPosition
 
+            oldItem is Item.Header && newItem is Item.Header -> true
             oldItem is Item.Spacer && newItem is Item.Spacer -> true
             oldItem is Item.TailSpacer && newItem is Item.TailSpacer -> true
             else -> false
@@ -238,6 +272,7 @@ class PagerAdapter(
 
     sealed interface Item {
         data class App(val entry: AppEntry) : Item
+        data class Header(val letter: Char) : Item
         data class Spacer(val key: String) : Item
         data class TailSpacer(val key: String) : Item
     }
@@ -254,6 +289,7 @@ class PagerAdapter(
         private const val VIEW_TYPE_APP = 0
         private const val VIEW_TYPE_SPACER = 1
         private const val VIEW_TYPE_TAIL_SPACER = 2
+        private const val VIEW_TYPE_HEADER = 3
         private const val PAYLOAD_STATE = "state"
     }
 }

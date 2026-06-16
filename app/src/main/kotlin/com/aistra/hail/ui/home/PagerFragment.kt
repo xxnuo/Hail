@@ -43,6 +43,7 @@ import com.aistra.hail.extensions.*
 import com.aistra.hail.ui.main.MainFragment
 import com.aistra.hail.ui.theme.AppTheme
 import com.aistra.hail.utils.*
+import com.aistra.hail.views.AlphabetFastScroller
 import com.aistra.hail.work.HWork
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -83,11 +84,17 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             onItemLongClickListener = this@PagerFragment
         }
         binding.recyclerView.run {
-            layoutManager = GridLayoutManager(
+            val gridLayoutManager = GridLayoutManager(
                 activity, resources.getInteger(
                     if (HailData.compactIcon) R.integer.home_span_compact else R.integer.home_span
                 )
-            )
+            ).apply {
+                spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                    override fun getSpanSize(position: Int): Int =
+                        if (pagerAdapter.isFullSpan(position)) spanCount else 1
+                }
+            }
+            layoutManager = gridLayoutManager
             adapter = pagerAdapter
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -95,12 +102,16 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     when (newState) {
                         RecyclerView.SCROLL_STATE_IDLE -> {
                             consumePendingCurrentListUpdate()
+                            hideFastScrollers()
                             activity.fab.run {
                                 postDelayed({ if (tag == true) show() }, 1000)
                             }
                         }
 
-                        RecyclerView.SCROLL_STATE_DRAGGING -> activity.fab.hide()
+                        RecyclerView.SCROLL_STATE_DRAGGING -> {
+                            showFastScrollers()
+                            activity.fab.hide()
+                        }
                     }
                 }
             })
@@ -115,13 +126,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
             applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true) }
         }
-        binding.fastScroller.apply {
-            onLetterSelected = ::scrollToLetter
-            onLetterCleared = { pagerAdapter.setActiveLetter(null) }
-            applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
-        }
-        AppStateCache.version.observe(viewLifecycleOwner) {
-            updateStateSnapshot()
+        setupFastScroller(binding.fastScrollerStart, AlphabetFastScroller.Placement.START)
+        setupFastScroller(binding.fastScrollerEnd, AlphabetFastScroller.Placement.END)
+        setupFastScroller(binding.fastScrollerBottom, AlphabetFastScroller.Placement.BOTTOM)
+        AppStateCache.updates.observe(viewLifecycleOwner) {
+            updateStateSnapshot(it.packageNames)
             app.setAutoFreezeService()
         }
         return binding.root
@@ -213,7 +222,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     private fun updateFastScroller() {
         fastScrollPositions = pagerAdapter.sectionPositions
-        binding.fastScroller.setAvailableLetters(fastScrollPositions.keys)
+        fastScrollers().forEach {
+            it.setAvailableLetters(fastScrollPositions.keys)
+            it.hideScroller(0L)
+        }
     }
 
     private fun scrollToLetter(letter: Char) {
@@ -221,6 +233,44 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         pagerAdapter.setActiveLetter(letter)
         (binding.recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, 0)
         activity.fab.hide()
+    }
+
+    private fun setupFastScroller(view: AlphabetFastScroller, placement: AlphabetFastScroller.Placement) {
+        view.setPlacement(placement)
+        view.onLetterSelected = ::scrollToLetter
+        view.onLetterCleared = { pagerAdapter.setActiveLetter(null) }
+        when (placement) {
+            AlphabetFastScroller.Placement.START ->
+                view.applyDefaultInsetter { marginRelative(isRtl, start = true, bottom = isLandscape) }
+
+            AlphabetFastScroller.Placement.END ->
+                view.applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
+
+            AlphabetFastScroller.Placement.BOTTOM ->
+                view.applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true, bottom = isLandscape) }
+        }
+    }
+
+    private fun fastScrollers() = listOf(
+        binding.fastScrollerStart,
+        binding.fastScrollerEnd,
+        binding.fastScrollerBottom
+    )
+
+    private fun activeFastScrollers() = if (isLandscape) {
+        listOf(binding.fastScrollerBottom)
+    } else {
+        listOf(binding.fastScrollerStart, binding.fastScrollerEnd)
+    }
+
+    private fun showFastScrollers() {
+        val active = activeFastScrollers()
+        fastScrollers().filterNot { it in active }.forEach { it.hideScroller(0L) }
+        active.forEach { it.showScroller() }
+    }
+
+    private fun hideFastScrollers() {
+        fastScrollers().forEach { it.hideScroller() }
     }
 
     private fun updateBarTitle() {
