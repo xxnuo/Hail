@@ -25,6 +25,15 @@
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
     <com.aistra.hail.views.AlphabetFastScroller
+        android:id="@+id/fast_scroller_start"
+        android:layout_width="@dimen/fast_scroller_extent"
+        android:layout_height="match_parent"
+        android:layout_gravity="start|center_vertical"
+        android:alpha="0"
+        android:paddingVertical="@dimen/padding_small"
+        android:visibility="gone" />
+
+    <com.aistra.hail.views.AlphabetFastScroller
         android:id="@+id/fast_scroller_end"
         android:layout_width="@dimen/fast_scroller_extent"
         android:layout_height="match_parent"

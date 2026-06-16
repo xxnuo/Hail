@@ -59,7 +59,9 @@ class AboutFragment : MainFragment() {
         var openLicenseDialog by remember { mutableStateOf(false) }
         if (openLicenseDialog) LicenseDialog { openLicenseDialog = false }
         Column(
-            modifier = Modifier.verticalScroll(state = rememberScrollState())
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                .verticalScroll(state = rememberScrollState())
         ) {
             Spacer(modifier = Modifier.height(dimensionResource(R.dimen.padding_medium)))
             Card(

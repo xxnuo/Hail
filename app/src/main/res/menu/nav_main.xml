@@ -1,19 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:id="@+id/nav_home"
-        android:icon="@drawable/ic_round_frozen"
-        android:title="@string/title_home" />
-    <item
-        android:id="@+id/nav_apps"
-        android:icon="@drawable/ic_baseline_android"
-        android:title="@string/title_apps" />
-    <item
-        android:id="@+id/nav_settings"
-        android:icon="@drawable/ic_settings_selector"
-        android:title="@string/title_settings" />
-    <item
-        android:id="@+id/nav_about"
-        android:icon="@drawable/ic_info_selector"
-        android:title="@string/title_about" />
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <group android:id="@+id/group_navigation">
+        <item
+            android:id="@+id/nav_apps"
+            android:icon="@drawable/ic_baseline_android"
+            android:orderInCategory="1000"
+            android:title="@string/title_apps"
+            app:showAsAction="never" />
+        <item
+            android:id="@+id/nav_settings"
+            android:icon="@drawable/ic_settings_selector"
+            android:orderInCategory="1001"
+            android:title="@string/title_settings"
+            app:showAsAction="never" />
+        <item
+            android:id="@+id/nav_about"
+            android:icon="@drawable/ic_info_selector"
+            android:orderInCategory="1002"
+            android:title="@string/title_about"
+            app:showAsAction="never" />
+    </group>
 </menu>

@@ -88,13 +88,13 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
         }
         binding.refresh.apply {
             setOnRefreshListener { updateAppList() }
-            applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true) }
+            applyDefaultInsetter { marginRelative(isRtl, start = true, end = true) }
         }
         binding.recyclerView.apply {
             activity.appbar.setLiftOnScrollTargetView(this)
             layoutManager = GridLayoutManager(activity, resources.getInteger(R.integer.apps_span))
             adapter = appsAdapter
-            applyDefaultInsetter { paddingRelative(isRtl, bottom = isLandscape) }
+            applyDefaultInsetter { paddingRelative(isRtl, bottom = true) }
             registerForContextMenu(this)
         }
 

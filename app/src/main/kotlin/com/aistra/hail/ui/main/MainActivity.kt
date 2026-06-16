@@ -18,8 +18,9 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
+import androidx.navigation.ui.navigateUp
+import androidx.navigation.ui.onNavDestinationSelected
 import androidx.navigation.ui.setupActionBarWithNavController
-import androidx.navigation.ui.setupWithNavController
 import com.aistra.hail.R
 import com.aistra.hail.app.HailData
 import com.aistra.hail.databinding.ActivityMainBinding
@@ -38,6 +39,8 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
     lateinit var homeSearchBar: View
     lateinit var homeSearchIcon: ImageView
     lateinit var homeSearchInput: EditText
+    private lateinit var navController: NavController
+    private lateinit var appBarConfiguration: AppBarConfiguration
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,32 +80,36 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         homeSearchBar = appBarMain.homeSearchBar
         homeSearchIcon = appBarMain.homeSearchIcon
         homeSearchInput = appBarMain.homeSearchInput
-        t9Keyboard.applyDefaultInsetter { marginRelative(isRtl, bottom = isLandscape) }
+        t9Keyboard.applyDefaultInsetter { marginRelative(isRtl, bottom = true) }
 
         val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        val navController = navHostFragment.navController
+        navController = navHostFragment.navController
         navController.addOnDestinationChangedListener(this@MainActivity)
-        val appBarConfiguration = AppBarConfiguration.Builder(
-            R.id.nav_home, R.id.nav_apps, R.id.nav_settings, R.id.nav_about
-        ).build()
+        appBarConfiguration = AppBarConfiguration.Builder(R.id.nav_home).build()
         setupActionBarWithNavController(navController, appBarConfiguration)
-        bottomNav?.setupWithNavController(navController)
-        navRail?.setupWithNavController(navController)
 
         val isRtl = isRtl
-        val isLandscape = isLandscape
         appBarMain.appBarLayout.applyDefaultInsetter {
-            paddingRelative(isRtl, start = !isLandscape, end = true, top = true)
+            paddingRelative(isRtl, start = true, end = true, top = true)
         }
-        bottomNav?.applyDefaultInsetter { paddingRelative(isRtl, start = true, end = true, bottom = true) }
-        navRail?.applyDefaultInsetter { paddingRelative(isRtl, start = true, top = true, bottom = true) }
-        fab.applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
+        fab.applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = true) }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        menu?.let { MenuCompat.setGroupDividerEnabled(it, true) }
-        return super.onCreateOptionsMenu(menu)
+        super.onCreateOptionsMenu(menu)
+        menu?.let {
+            menuInflater.inflate(R.menu.nav_main, it)
+            MenuCompat.setGroupDividerEnabled(it, true)
+        }
+        return true
     }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean = when (item.itemId) {
+        R.id.nav_apps, R.id.nav_settings, R.id.nav_about -> item.onNavDestinationSelected(navController)
+        else -> super.onOptionsItemSelected(item)
+    }
+
+    override fun onSupportNavigateUp(): Boolean = navController.navigateUp(appBarConfiguration)
 
     fun ownerRemoveDialog() {
         MaterialAlertDialogBuilder(this).setTitle(R.string.title_remove_owner).setMessage(R.string.msg_remove_owner)
@@ -123,5 +130,6 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         fab.tag = destination.id == R.id.nav_home
         homeSearchBar.isVisible = destination.id == R.id.nav_home
         if (fab.tag == true) fab.show() else fab.hide()
+        invalidateOptionsMenu()
     }
 }

@@ -9,7 +9,6 @@ import com.aistra.hail.app.AppInfo
 import com.aistra.hail.app.HailData.tags
 import com.aistra.hail.databinding.FragmentHomeBinding
 import com.aistra.hail.extensions.applyDefaultInsetter
-import com.aistra.hail.extensions.isLandscape
 import com.aistra.hail.extensions.isRtl
 import com.aistra.hail.extensions.paddingRelative
 import com.aistra.hail.ui.main.MainFragment
@@ -30,7 +29,7 @@ class HomeFragment : MainFragment() {
         TabLayoutMediator(binding.tabs, binding.pager) { tab, position ->
             tab.text = tags[position].first
         }.attach()
-        binding.tabs.applyDefaultInsetter { paddingRelative(isRtl, start = !activity.isLandscape, end = true) }
+        binding.tabs.applyDefaultInsetter { paddingRelative(isRtl, start = true, end = true) }
         return binding.root
     }
 

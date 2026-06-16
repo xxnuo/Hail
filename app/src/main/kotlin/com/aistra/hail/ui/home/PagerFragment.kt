@@ -72,6 +72,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private val binding get() = _binding!!
     private lateinit var pagerAdapter: PagerAdapter
     private var fastScrollPositions: Map<Char, Int> = emptyMap()
+    private var fastScrollerPlacement = AlphabetFastScroller.Placement.END
     private var pendingCurrentListUpdate = false
     private var searchTextWatcher: TextWatcher? = null
     private val nameCollator = Collator.getInstance()
@@ -108,6 +109,12 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             }
             layoutManager = gridLayoutManager
             adapter = pagerAdapter
+            addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+                override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                    updateFastScrollerPlacement(rv, e)
+                    return false
+                }
+            })
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
@@ -128,7 +135,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     }
                 }
             })
-            applyDefaultInsetter { paddingRelative(isRtl, bottom = isLandscape) }
+            applyDefaultInsetter { paddingRelative(isRtl, bottom = true) }
 
         }
 
@@ -137,15 +144,26 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 updateCurrentList()
                 binding.refresh.isRefreshing = false
             }
-            applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true) }
+            applyDefaultInsetter { marginRelative(isRtl, start = true, end = true) }
         }
         setupFastScroller(binding.fastScrollerEnd, AlphabetFastScroller.Placement.END)
+        setupFastScroller(binding.fastScrollerStart, AlphabetFastScroller.Placement.START)
         setupFastScroller(binding.fastScrollerBottom, AlphabetFastScroller.Placement.BOTTOM)
         AppStateCache.updates.observe(viewLifecycleOwner) {
             updateStateSnapshot(it.packageNames)
             app.setAutoFreezeService()
         }
         return binding.root
+    }
+
+    private fun updateFastScrollerPlacement(recyclerView: RecyclerView, event: MotionEvent) {
+        if (event.actionMasked != MotionEvent.ACTION_DOWN || recyclerView.width <= 0) return
+        val placement =
+            if (event.x < recyclerView.width / 2f) AlphabetFastScroller.Placement.START
+            else AlphabetFastScroller.Placement.END
+        if (fastScrollerPlacement == placement) return
+        fastScrollerPlacement = placement
+        pagerAdapter.setSectionHeaderAlignEnd(placement == AlphabetFastScroller.Placement.START)
     }
 
     private fun requestCurrentListUpdate() {
@@ -213,6 +231,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             tailSpacerHeight = binding.recyclerView.height.takeIf { height -> height > 0 }
                 ?: resources.displayMetrics.heightPixels
         )
+        pagerAdapter.setSectionHeaderAlignEnd(fastScrollerPlacement == AlphabetFastScroller.Placement.START)
         AppStateCache.primeAsync(packages)
         updateFastScroller()
         app.setAutoFreezeService()
@@ -402,23 +421,26 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         view.onLetterCleared = { pagerAdapter.setActiveLetter(null) }
         when (placement) {
             AlphabetFastScroller.Placement.START ->
-                view.applyDefaultInsetter { marginRelative(isRtl, start = true, bottom = isLandscape) }
+                view.applyDefaultInsetter { marginRelative(isRtl, start = true, bottom = true) }
 
             AlphabetFastScroller.Placement.END ->
-                view.applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = isLandscape) }
+                view.applyDefaultInsetter { marginRelative(isRtl, end = true, bottom = true) }
 
             AlphabetFastScroller.Placement.BOTTOM ->
-                view.applyDefaultInsetter { marginRelative(isRtl, start = !isLandscape, end = true, bottom = isLandscape) }
+                view.applyDefaultInsetter { marginRelative(isRtl, start = true, end = true, bottom = true) }
         }
     }
 
     private fun fastScrollers() = listOf(
+        binding.fastScrollerStart,
         binding.fastScrollerEnd,
         binding.fastScrollerBottom
     )
 
     private fun activeFastScrollers() = if (isLandscape) {
         listOf(binding.fastScrollerBottom)
+    } else if (fastScrollerPlacement == AlphabetFastScroller.Placement.START) {
+        listOf(binding.fastScrollerStart)
     } else {
         listOf(binding.fastScrollerEnd)
     }

@@ -1,6 +1,7 @@
 package com.aistra.hail.ui.home
 
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -26,6 +27,7 @@ class PagerAdapter(
 ) : ListAdapter<PagerAdapter.Item, PagerAdapter.ViewHolder>(HomeDiff(selectedList, flags, states)) {
     private var loadIconJob: Job? = null
     private var activeLetter: Char? = null
+    private var sectionHeaderGravity = Gravity.START or Gravity.CENTER_VERTICAL
     private var tailSpacerHeight: Int = 0
     var appList: List<AppInfo> = emptyList()
         private set
@@ -61,7 +63,7 @@ class PagerAdapter(
                     resources.getDimensionPixelSize(R.dimen.padding_medium),
                     resources.getDimensionPixelSize(R.dimen.padding_medium)
                 )
-                gravity = android.view.Gravity.CENTER_VERTICAL
+                gravity = sectionHeaderGravity
                 isClickable = true
                 isFocusable = true
                 val selectable = TypedValue()
@@ -89,13 +91,20 @@ class PagerAdapter(
             }
             return
         }
+        if (payloads.any { it == PAYLOAD_SECTION_HEADER_GRAVITY }) {
+            (holder.itemView as? TextView)?.gravity = sectionHeaderGravity
+            return
+        }
         super.onBindViewHolder(holder, position, payloads)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = currentList[position]
         if (item is Item.Header) {
-            (holder.itemView as? TextView)?.text = item.letter.toString()
+            (holder.itemView as? TextView)?.run {
+                gravity = sectionHeaderGravity
+                text = item.letter.toString()
+            }
             holder.itemView.setOnClickListener { onSectionHeaderClickListener?.invoke(item.letter) }
             return
         }
@@ -172,6 +181,15 @@ class PagerAdapter(
         if (activeLetter == letter) return
         activeLetter = letter
         notifyDataSetChanged()
+    }
+
+    fun setSectionHeaderAlignEnd(alignEnd: Boolean) {
+        val gravity = (if (alignEnd) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
+        if (sectionHeaderGravity == gravity) return
+        sectionHeaderGravity = gravity
+        currentList.forEachIndexed { index, item ->
+            if (item is Item.Header) notifyItemChanged(index, PAYLOAD_SECTION_HEADER_GRAVITY)
+        }
     }
 
     fun onDestroy() {
@@ -321,6 +339,7 @@ class PagerAdapter(
         private const val VIEW_TYPE_TAIL_SPACER = 2
         private const val VIEW_TYPE_HEADER = 3
         private const val PAYLOAD_STATE = "state"
+        private const val PAYLOAD_SECTION_HEADER_GRAVITY = "section_header_gravity"
     }
 }
 
