@@ -33,6 +33,8 @@ class PagerAdapter(
         private set
     var sectionPositions: Map<Char, Int> = emptyMap()
         private set
+    var sectionAppCounts: Map<Char, Int> = emptyMap()
+        private set
     var onSectionHeaderClickListener: ((Char) -> Unit)? = null
     lateinit var onItemClickListener: OnItemClickListener
     lateinit var onItemLongClickListener: OnItemLongClickListener
@@ -144,8 +146,10 @@ class PagerAdapter(
         appList = entries.map { it.info }
         this.tailSpacerHeight = tailSpacerHeight
         val positions = mutableMapOf<Char, Int>()
-        submitList(buildItems(entries, spanCount, tailSpacerRows, positions))
+        val counts = mutableMapOf<Char, Int>()
+        submitList(buildItems(entries, spanCount, tailSpacerRows, positions, counts))
         sectionPositions = positions
+        sectionAppCounts = counts
     }
 
     fun isFullSpan(position: Int): Boolean = currentList.getOrNull(position).let {
@@ -180,7 +184,8 @@ class PagerAdapter(
         entries: List<AppEntry>,
         spanCount: Int,
         tailSpacerRows: Int,
-        positions: MutableMap<Char, Int>
+        positions: MutableMap<Char, Int>,
+        counts: MutableMap<Char, Int>
     ): List<Item> {
         val safeSpanCount = spanCount.coerceAtLeast(1)
         val items = mutableListOf<Item>()
@@ -205,6 +210,7 @@ class PagerAdapter(
                 }
             }
             entry.sectionStartPosition = items.size
+            if (letter != null) counts[letter] = (counts[letter] ?: 0) + 1
             items.add(Item.App(entry))
             spanCursor = (spanCursor + 1) % safeSpanCount
         }

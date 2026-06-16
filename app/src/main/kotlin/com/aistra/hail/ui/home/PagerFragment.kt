@@ -1,8 +1,5 @@
 package com.aistra.hail.ui.home
 
-import android.app.Dialog
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
@@ -11,10 +8,9 @@ import android.view.*
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.GridLayout
-import android.widget.GridLayout.CENTER
-import android.widget.GridLayout.spec
+import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.widget.SearchView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -56,7 +52,6 @@ import com.aistra.hail.ui.theme.AppTheme
 import com.aistra.hail.utils.*
 import com.aistra.hail.views.AlphabetFastScroller
 import com.aistra.hail.work.HWork
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -251,15 +246,20 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun scrollToLetterNearTouch(letter: Char, anchorFraction: Float) {
-        val position = fastScrollPositions[letter] ?: return
+        val headerPosition = fastScrollPositions[letter] ?: return
         val recyclerView = binding.recyclerView
+        val layoutManager = recyclerView.layoutManager as? GridLayoutManager ?: return
         val rowHeight = estimatedAppRowHeight()
-        val anchorY = (recyclerView.height * anchorFraction).roundToInt()
+        val appCount = pagerAdapter.sectionAppCounts[letter] ?: 1
+        val sectionRows = ((appCount + layoutManager.spanCount - 1) / layoutManager.spanCount).coerceAtLeast(1)
+        val sectionHeight = sectionRows * rowHeight
+        val anchorY = ((recyclerView.height * anchorFraction) - resources.getDimensionPixelSize(R.dimen.padding_small))
+            .roundToInt()
         val minOffset = recyclerView.paddingTop
-        val maxOffset = (recyclerView.height - recyclerView.paddingBottom - rowHeight).coerceAtLeast(minOffset)
-        val offset = (anchorY - rowHeight).coerceIn(minOffset, maxOffset)
+        val maxOffset = (recyclerView.height - recyclerView.paddingBottom - sectionHeight).coerceAtLeast(minOffset)
+        val offset = (anchorY - sectionHeight).coerceIn(minOffset, maxOffset)
         pagerAdapter.setActiveLetter(letter)
-        (recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, offset)
+        layoutManager.scrollToPositionWithOffset(headerPosition + 1, offset)
         activity.fab.hide()
     }
 
@@ -291,9 +291,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private fun showLetterPicker(currentLetter: Char) {
         val available = fastScrollPositions.keys
         val hasUnlettered = pagerAdapter.firstUnletteredAppPosition() != RecyclerView.NO_POSITION
-        val dialog = Dialog(requireActivity(), R.style.Theme_Hail_Translucent)
-        val content = FrameLayout(requireContext()).apply {
-            layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        val overlay = FrameLayout(requireContext()).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
             setBackgroundColor(
                 ColorUtils.setAlphaComponent(
                     MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface),
@@ -301,23 +300,23 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 )
             )
             alpha = 0f
-            setOnClickListener { dialog.dismiss() }
         }
         val scroll = ScrollView(requireContext()).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
             overScrollMode = View.OVER_SCROLL_NEVER
             isVerticalScrollBarEnabled = false
-            setOnClickListener { dialog.dismiss() }
+            isFillViewport = true
+            setOnClickListener { (overlay.parent as? ViewGroup)?.removeView(overlay) }
         }
-        val grid = GridLayout(requireContext()).apply {
+        val container = LinearLayout(requireContext()).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT).apply {
                 marginStart = resources.getDimensionPixelSize(R.dimen.padding_large)
                 marginEnd = resources.getDimensionPixelSize(R.dimen.padding_large)
                 topMargin = resources.getDimensionPixelSize(R.dimen.padding_large)
                 bottomMargin = resources.getDimensionPixelSize(R.dimen.padding_large)
             }
-            columnCount = 4
-            useDefaultMargins = false
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             clipToPadding = false
             setPadding(
                 resources.getDimensionPixelSize(R.dimen.padding_medium),
@@ -326,33 +325,24 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 resources.getDimensionPixelSize(R.dimen.padding_large)
             )
         }
-        fun addCell(label: String, enabled: Boolean, selected: Boolean = false, onClick: (() -> Unit)? = null) {
-            grid.addView(MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                layoutParams = GridLayout.LayoutParams(spec(GridLayout.UNDEFINED, 1f), spec(GridLayout.UNDEFINED, 1f)).apply {
-                    width = 0
-                    height = resources.getDimensionPixelSize(R.dimen.letter_picker_cell_size)
-                    rowSpec = spec(GridLayout.UNDEFINED, CENTER)
-                    columnSpec = spec(GridLayout.UNDEFINED, CENTER, 1f)
-                    setMargins(
-                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
-                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
-                        resources.getDimensionPixelSize(R.dimen.padding_extra_small),
-                        resources.getDimensionPixelSize(R.dimen.padding_extra_small)
-                    )
+        val cellHeight = resources.getDimensionPixelSize(R.dimen.letter_picker_cell_size)
+        val cellMargin = resources.getDimensionPixelSize(R.dimen.padding_extra_small)
+        fun addRow(): LinearLayout = LinearLayout(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, cellHeight)
+            orientation = LinearLayout.HORIZONTAL
+            container.addView(this)
+        }
+        fun LinearLayout.addCell(label: String, enabled: Boolean, selected: Boolean = false, onClick: (() -> Unit)? = null) {
+            addView(TextView(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, 1f).apply {
+                    setMargins(cellMargin, cellMargin, cellMargin, cellMargin)
                 }
                 text = label
-                isAllCaps = false
+                gravity = Gravity.CENTER
                 isEnabled = enabled
                 isClickable = enabled
                 isFocusable = enabled
-                strokeWidth = 0
-                cornerRadius = resources.getDimensionPixelSize(R.dimen.padding_small)
-                minWidth = 0
-                minHeight = 0
-                setInsetTop(0)
-                setInsetBottom(0)
-                setPadding(0, 0, 0, 0)
-                backgroundTintList = null
+                includeFontPadding = false
                 setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_HeadlineSmall)
                 setTextColor(
                     MaterialColors.getColor(
@@ -369,33 +359,38 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (selected) {
                     val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
                     setBackgroundColor(surface)
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
                 } else if (enabled) {
                     val value = TypedValue()
                     context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
                     setBackgroundResource(value.resourceId)
                 }
-                onClick?.let { setOnClickListener { dialog.dismiss(); it() } }
+                onClick?.let {
+                    setOnClickListener {
+                        (overlay.parent as? ViewGroup)?.removeView(overlay)
+                        it()
+                    }
+                }
             })
         }
-        addCell("#", hasUnlettered, currentLetter == '#') { scrollToLetter('#') }
-        ('A'..'Z').forEach { letter ->
-            addCell(letter.toString(), letter in available, currentLetter == letter) {
-                scrollToLetter(letter)
+        val labels = listOf("#") + ('A'..'Z').map { it.toString() }
+        labels.chunked(4).forEach { rowLabels ->
+            val row = addRow()
+            rowLabels.forEach { label ->
+                val letter = label.single()
+                val enabled = if (letter == '#') hasUnlettered else letter in available
+                row.addCell(label, enabled, currentLetter == letter) {
+                    scrollToLetter(letter)
+                }
+            }
+            repeat(4 - rowLabels.size) {
+                row.addCell("", false)
             }
         }
-        scroll.addView(grid)
-        content.addView(scroll)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(content)
-        dialog.setOnShowListener {
-            dialog.window?.run {
-                setLayout(MATCH_PARENT, MATCH_PARENT)
-                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            }
-            content.animate().alpha(1f).setDuration(140L).start()
-        }
-        dialog.show()
+        scroll.addView(container)
+        overlay.addView(scroll)
+        binding.root.addView(overlay)
+        overlay.animate().alpha(1f).setDuration(140L).start()
     }
 
     private fun setupFastScroller(view: AlphabetFastScroller, placement: AlphabetFastScroller.Placement) {
@@ -915,6 +910,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         searchView.queryHint = getString(R.string.action_search)
         searchView.setIconifiedByDefault(false)
         searchView.isIconified = false
+        searchView.setQuery(query, false)
+        tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
         searchView.clearFocus()
         if (HailData.nineKeySearch) {
             val editText = searchView.findViewById<EditText>(androidx.appcompat.R.id.search_src_text)
