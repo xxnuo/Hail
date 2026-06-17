@@ -194,6 +194,10 @@ class ApiActivity : ComponentActivity() {
         if (AppManager.isAppFrozen(pkg) && AppManager.setAppFrozen(pkg, false)) {
             app.setAutoFreezeService()
         }
+        if (AppManager.launchAppPrivileged(pkg)) {
+            HShortcuts.addDynamicShortcut(pkg)
+            return
+        }
         packageManager.getLaunchIntentForPackage(pkg)?.let {
             HShortcuts.addDynamicShortcut(pkg)
             startActivity(it)

@@ -50,6 +50,11 @@ object HShell {
 
     val lockScreen get() = execSU("input keyevent KEYCODE_POWER").first == 0
 
+    fun launchApp(packageName: String): Boolean =
+        HPackages.getLaunchComponentName(packageName)?.let {
+            execSU("am start --user current -n ${shellQuote(it.flattenToString())}").first == 0
+        } ?: false
+
     fun forceStopApp(packageName: String): Boolean =
         execSU("am force-stop --user current ${shellQuote(packageName)}").first == 0
 

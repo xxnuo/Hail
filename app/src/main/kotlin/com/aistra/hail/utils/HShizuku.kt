@@ -21,6 +21,7 @@ import rikka.shizuku.SystemServiceHelper
 object HShizuku {
     val isRoot get() = Shizuku.getUid() == 0
     private val callerPackage get() = if (isRoot) BuildConfig.APPLICATION_ID else "com.android.shell"
+    private fun shellQuote(value: String) = "'${value.replace("'", "'\"'\"'")}'"
 
     private fun asInterface(className: String, original: IBinder): Any = Class.forName("$className\$Stub").run {
         if (HTarget.P) HiddenApiBypass.invoke(this, null, "asInterface", ShizukuBinderWrapper(original))
@@ -212,6 +213,11 @@ object HShizuku {
 
     fun reinstallApp(packageName: String): Boolean =
         execute("pm install-existing --user current $packageName").first == 0
+
+    fun launchApp(packageName: String): Boolean =
+        HPackages.getLaunchComponentName(packageName)?.let {
+            execute("am start --user current -n ${shellQuote(it.flattenToString())}").first == 0
+        } ?: false
 
     fun execute(command: String, root: Boolean = isRoot): Pair<Int, String?> = runCatching {
         IShizukuService.Stub.asInterface(Shizuku.getBinder()).newProcess(arrayOf(if (root) "su" else "sh"), null, null)

@@ -2,6 +2,7 @@ package com.aistra.hail.utils
 
 import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.content.ComponentName
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -73,6 +74,11 @@ object HPackages {
 
     fun canUninstallNormally(packageName: String): Boolean =
         getApplicationInfoOrNull(packageName)?.sourceDir?.startsWith("/data") ?: false
+
+    fun getLaunchComponentName(packageName: String): ComponentName? =
+        app.packageManager.getLaunchIntentForPackage(packageName)?.let {
+            it.component ?: it.resolveActivity(app.packageManager)
+        }
 
     fun forceStopApp(packageName: String): Boolean = runCatching {
         app.getSystemService<ActivityManager>()!!.let {

@@ -826,6 +826,12 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         ) {
             updateStateSnapshot(listOf(packageName))
         }
+        if (AppManager.launchAppPrivileged(packageName)) {
+            HShortcuts.addDynamicShortcut(packageName)
+            clearHomeSearch()
+            clearHomeSearchFocus()
+            return
+        }
         app.packageManager.getLaunchIntentForPackage(packageName)?.let {
             HShortcuts.addDynamicShortcut(packageName)
             startActivity(it)
