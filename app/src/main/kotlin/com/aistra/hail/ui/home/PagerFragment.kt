@@ -79,6 +79,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private var pendingCurrentListUpdate = false
     private var searchTextWatcher: TextWatcher? = null
     private var searchBackCallback: OnBackPressedCallback? = null
+    private var homeMenu: Menu? = null
+    private var homeSearchDefaultMarginEnd: Int? = null
     private var updateCurrentListJob: Job? = null
     private var updateCurrentListGeneration = 0
     private var multiselect: Boolean
@@ -1027,6 +1029,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.menu_home, menu)
+        homeMenu = menu
         val searchInput = activity.homeSearchInput
         searchTextWatcher?.let(searchInput::removeTextChangedListener)
         if (searchInput.text.toString() != query) {
@@ -1035,7 +1038,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         }
         tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
         activity.homeSearchBar.isVisible = true
-        updateHomeSearchClear(searchInput)
+        updateHomeSearchMode(searchInput)
         activity.homeSearchIcon.setOnClickListener { focusHomeSearch(searchInput) }
         activity.homeSearchBar.setOnClickListener { focusHomeSearch(searchInput) }
         setupT9EditText(searchInput, binding.recyclerView)
@@ -1062,7 +1065,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (query == newText) return
                 query = newText
                 tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
-                updateHomeSearchClear(searchInput)
+                updateHomeSearchMode(searchInput)
                 updateCurrentList()
             }
 
@@ -1082,6 +1085,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     override fun onDestroyView() {
         searchTextWatcher?.let(activity.homeSearchInput::removeTextChangedListener)
         searchTextWatcher = null
+        homeMenu = null
         searchBackCallback?.remove()
         searchBackCallback = null
         updateCurrentListJob?.cancel()
@@ -1118,8 +1122,14 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         if (query.isEmpty()) return
         query = ""
         tabs.isVisible = tabs.tabCount > 1
-        updateHomeSearchClear(searchInput)
+        updateHomeSearchMode(searchInput)
         updateCurrentList()
+    }
+
+    private fun updateHomeSearchMode(searchInput: EditText) {
+        updateHomeSearchClear(searchInput)
+        updateHomeSearchActions()
+        updateHomeSearchMargin()
     }
 
     private fun updateHomeSearchClear(searchInput: EditText) {
@@ -1127,6 +1137,26 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, icon, 0)
         searchInput.compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.padding_small)
         searchBackCallback?.isEnabled = query.isNotEmpty()
+    }
+
+    private fun updateHomeSearchActions() {
+        val showActions = query.isEmpty()
+        homeMenu?.let { menu ->
+            for (index in 0 until menu.size()) {
+                menu.getItem(index).isVisible = showActions
+            }
+        }
+    }
+
+    private fun updateHomeSearchMargin() {
+        val params = activity.homeSearchBar.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        val defaultMarginEnd = homeSearchDefaultMarginEnd ?: params.marginEnd.also {
+            homeSearchDefaultMarginEnd = it
+        }
+        val marginEnd = if (query.isEmpty()) defaultMarginEnd else 0
+        if (params.marginEnd == marginEnd) return
+        params.marginEnd = marginEnd
+        activity.homeSearchBar.layoutParams = params
     }
 
     private fun clearHomeSearchFocus() {
