@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
     }
 
     override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean = when (item.itemId) {
-        R.id.nav_apps, R.id.nav_settings, R.id.nav_about -> item.onNavDestinationSelected(navController)
+        R.id.nav_permafrost, R.id.nav_apps, R.id.nav_settings, R.id.nav_about -> item.onNavDestinationSelected(navController)
         else -> super.onOptionsItemSelected(item)
     }
 

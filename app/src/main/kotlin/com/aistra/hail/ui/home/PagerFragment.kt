@@ -70,6 +70,7 @@ import kotlin.math.roundToInt
 
 class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAdapter.OnItemLongClickListener,
     MenuProvider {
+    private val permafrost get() = arguments?.getBoolean(HomeFragment.ARG_PERMAFROST) == true
     private var query: String = String()
     private var _binding: FragmentPagerBinding? = null
     private val binding get() = _binding!!
@@ -90,7 +91,17 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private val selectedList get() = (parentFragment as HomeFragment).selectedList
     private val tabs: TabLayout get() = (parentFragment as HomeFragment).binding.tabs
     private val adapter get() = (parentFragment as HomeFragment).binding.pager.adapter as HomeAdapter
-    private val tag: Pair<String, Int> get() = HailData.tags[tabs.selectedTabPosition]
+    private val tag: Pair<String, Int>
+        get() = if (permafrost) HailData.tags.first() else HailData.tags[tabs.selectedTabPosition]
+
+    companion object {
+        fun newInstance(permafrost: Boolean) = PagerFragment().apply {
+            arguments = Bundle().apply {
+                putBoolean(HomeFragment.ARG_PERMAFROST, permafrost)
+            }
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -248,9 +259,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         updateCurrentList()
         updateBarTitle()
         activity.appbar.setLiftOnScrollTargetView(binding.recyclerView)
-        tabs.getTabAt(tabs.selectedTabPosition)?.view?.setOnLongClickListener {
-            if (isResumed) showTagDialog()
-            true
+        if (!permafrost) {
+            tabs.getTabAt(tabs.selectedTabPosition)?.view?.setOnLongClickListener {
+                if (isResumed) showTagDialog()
+                true
+            }
         }
         activity.fab.setOnClickListener {
             setListFrozen(true, pagerAdapter.appList.filterNot { it.whitelisted })
@@ -266,6 +279,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         val tagId = tag.second
         val queryText = query
         val nineKeySearch = HailData.nineKeySearch
+        val permafrost = permafrost
         val spanCount = (binding.recyclerView.layoutManager as? GridLayoutManager)?.spanCount ?: 1
         val tailSpacerHeight = binding.recyclerView.height.takeIf { height -> height > 0 }
             ?: resources.displayMetrics.heightPixels
@@ -273,7 +287,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         updateCurrentListJob = viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.Default) {
                 val apps = HailData.checkedList.toList()
-                buildCurrentList(apps, tagId, queryText, nineKeySearch)
+                buildCurrentList(apps, tagId, queryText, nineKeySearch, permafrost)
             }
             if (generation != updateCurrentListGeneration || _binding == null) return@launch
             binding.empty.isVisible = result.entries.isEmpty()
@@ -295,15 +309,19 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         apps: List<AppInfo>,
         tagId: Int,
         queryText: String,
-        nineKeySearch: Boolean
+        nineKeySearch: Boolean,
+        permafrost: Boolean
     ): CurrentListResult {
         val collator = Collator.getInstance()
         val entries = mutableListOf<PagerAdapter.AppEntry>()
         for (appInfo in apps) {
             kotlin.coroutines.coroutineContext.ensureActive()
+            if (permafrost) {
+                if (!appInfo.whitelisted) continue
+            } else if (appInfo.whitelisted) continue
             val name = appInfo.name
             if (queryText.isEmpty()) {
-                if (tagId !in appInfo.tagIdList) continue
+                if (!permafrost && tagId !in appInfo.tagIdList) continue
             } else {
                 val nameText = name.toString()
                 val matches = (nineKeySearch && NineKeySearch.search(queryText, appInfo.packageName, nameText))
@@ -899,6 +917,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private fun showTagDialog(list: List<AppInfo>? = null) {
+        if (permafrost && list == null) return
         val binding = DialogInputBinding.inflate(layoutInflater)
         binding.inputLayout.setHint(R.string.tag)
         list ?: binding.editText.setText(tag.first)
@@ -909,8 +928,10 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 if (HailData.tags.any { it.first == tagName || it.second == tagId }) return@setPositiveButton
                 if (list != null) { // Add tag
                     HailData.tags.add(tagName to tagId)
-                    adapter.notifyItemInserted(adapter.itemCount - 1)
-                    if (query.isEmpty() && tabs.tabCount == 2) tabs.isVisible = true
+                    if (!permafrost) {
+                        adapter.notifyItemInserted(adapter.itemCount - 1)
+                        if (query.isEmpty() && tabs.tabCount == 2) tabs.isVisible = true
+                    }
                     if (list == selectedList) triStateTagDialog() else tagDialog(list.first())
                 } else { // Rename tag
                     val position = tabs.selectedTabPosition
@@ -1043,7 +1064,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             searchInput.setText(query)
             searchInput.setSelection(searchInput.text?.length ?: 0)
         }
-        tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
+        tabs.isVisible = !permafrost && query.isEmpty() && tabs.tabCount > 1
         activity.homeSearchBar.isVisible = true
         updateHomeSearchMode(searchInput)
         activity.homeSearchIcon.setOnClickListener { focusHomeSearch(searchInput) }
@@ -1061,7 +1082,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 val newText = s?.toString().orEmpty()
                 if (query == newText) return
                 query = newText
-                tabs.isVisible = query.isEmpty() && tabs.tabCount > 1
+                tabs.isVisible = !permafrost && query.isEmpty() && tabs.tabCount > 1
                 updateHomeSearchMode(searchInput)
                 updateCurrentList()
             }
@@ -1118,7 +1139,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         if (searchInput.text.isNotEmpty()) searchInput.text.clear()
         if (query.isEmpty()) return
         query = ""
-        tabs.isVisible = tabs.tabCount > 1
+        tabs.isVisible = !permafrost && tabs.tabCount > 1
         updateHomeSearchMode(searchInput)
         updateCurrentList()
     }

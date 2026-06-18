@@ -3,6 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <group android:id="@+id/group_navigation">
         <item
+            android:id="@+id/nav_permafrost"
+            android:icon="@drawable/ic_outline_lock"
+            android:orderInCategory="999"
+            android:title="@string/title_permafrost"
+            app:showAsAction="never" />
+        <item
             android:id="@+id/nav_apps"
             android:icon="@drawable/ic_baseline_android"
             android:orderInCategory="1000"

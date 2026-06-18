@@ -11,6 +11,16 @@
         android:label="@string/app_name" />
 
     <fragment
+        android:id="@+id/nav_permafrost"
+        android:name="com.aistra.hail.ui.home.HomeFragment"
+        android:label="@string/title_permafrost">
+        <argument
+            android:name="permafrost"
+            android:defaultValue="true"
+            app:argType="boolean" />
+    </fragment>
+
+    <fragment
         android:id="@+id/nav_apps"
         android:name="com.aistra.hail.ui.apps.AppsFragment"
         android:label="@string/title_apps" />

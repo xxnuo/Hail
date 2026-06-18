@@ -19,16 +19,19 @@ class HomeFragment : MainFragment() {
     val selectedList: MutableList<AppInfo> = mutableListOf()
     private var _binding: FragmentHomeBinding? = null
     val binding get() = _binding!!
+    private val permafrost get() = arguments?.getBoolean(ARG_PERMAFROST) == true
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
-        if (tags.size == 1) binding.tabs.isVisible = false
-        binding.pager.adapter = HomeAdapter(this)
-        TabLayoutMediator(binding.tabs, binding.pager) { tab, position ->
-            tab.text = tags[position].first
-        }.attach()
+        binding.tabs.isVisible = !permafrost && tags.size > 1
+        binding.pager.adapter = HomeAdapter(this, permafrost)
+        if (!permafrost) {
+            TabLayoutMediator(binding.tabs, binding.pager) { tab, position ->
+                tab.text = tags[position].first
+            }.attach()
+        }
         binding.tabs.applyDefaultInsetter { paddingRelative(isRtl, start = true, end = true) }
         return binding.root
     }
@@ -38,5 +41,9 @@ class HomeFragment : MainFragment() {
         selectedList.clear()
         super.onDestroyView()
         _binding = null
+    }
+
+    companion object {
+        const val ARG_PERMAFROST = "permafrost"
     }
 }

@@ -3,6 +3,7 @@
     <string name="app_name">Hail</string>
     <string name="app_slogan">Freezedom!</string>
     <string name="title_home">Home</string>
+    <string name="title_permafrost">永冻层</string>
     <string name="title_apps">Apps</string>
     <string name="title_settings">Settings</string>
     <string name="title_about">About</string>
@@ -19,7 +20,7 @@
     <string name="action_unfreeze_all">Unfreeze all</string>
     <string name="action_freeze_current">Freeze visible</string>
     <string name="action_unfreeze_current">Unfreeze visible</string>
-    <string name="action_freeze_non_whitelisted">Freeze non-whitelisted</string>
+    <string name="action_freeze_non_whitelisted">Freeze non-永冻层</string>
     <string name="action_lock">Lock</string>
     <string name="action_lock_freeze">Lock &amp; Freeze</string>
     <string name="action_launch">Launch</string>
@@ -116,8 +117,8 @@
     <string name="msg_biometric">Login using your biometric credential</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
-    <string name="action_whitelist">Add to Whitelist</string>
-    <string name="action_remove_whitelist">Remove from Whitelist</string>
+    <string name="action_whitelist">Add to 永冻层</string>
+    <string name="action_remove_whitelist">Remove from 永冻层</string>
     <string name="nothing_here">Nothing here</string>
     <string name="action_import_frozen">Import frozen app</string>
     <string name="action_import_app">Import app</string>

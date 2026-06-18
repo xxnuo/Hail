@@ -3,6 +3,7 @@
     <string name="app_name">雹</string>
     <string name="app_slogan">实现冻结自由！</string>
     <string name="title_home">首页</string>
+    <string name="title_permafrost">永冻层</string>
     <string name="title_apps">应用</string>
     <string name="title_settings">设置</string>
     <string name="title_about">关于</string>
@@ -107,8 +108,8 @@
     <string name="msg_biometric">使用您的生物识别凭证登录</string>
     <string name="action_pin">置顶</string>
     <string name="action_unpin">取消置顶</string>
-    <string name="action_whitelist">添加到白名单</string>
-    <string name="action_remove_whitelist">从白名单中移除</string>
+    <string name="action_whitelist">添加到永冻层</string>
+    <string name="action_remove_whitelist">从永冻层中移除</string>
     <string name="nothing_here">什么都没有哦</string>
     <string name="action_import_frozen">导入已冻结应用</string>
     <string name="action_import_app">导入应用</string>
@@ -120,7 +121,7 @@
     <string name="mode_owner_suspend">设备所有者 - 暂停</string>
     <string name="mode_su_suspend">Root - 暂停</string>
     <string name="mode_shizuku_suspend">Shizuku - 暂停</string>
-    <string name="action_freeze_non_whitelisted">冻结非白名单</string>
+    <string name="action_freeze_non_whitelisted">冻结非永冻层</string>
     <string name="title_shortcuts">快捷方式</string>
     <string name="msg_guide">在冻结应用前，请先在设置中选择一个工作模式。</string>
     <string name="dynamic_shortcut_action">动态快捷方式操作</string>
