@@ -6,6 +6,7 @@ import com.aistra.hail.BuildConfig
 import com.aistra.hail.HailApp.Companion.app
 import com.aistra.hail.R
 import com.aistra.hail.utils.HFiles
+import com.aistra.hail.utils.HPackages
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,9 +27,9 @@ object HailData {
     const val VERSION = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
     private const val KEY_ID = "id"
     const val KEY_TAG = "tag"
-    private const val KEY_TAGS = "tags"
-    private const val KEY_PINNED = "pinned"
-    private const val KEY_WHITELISTED = "whitelisted"
+    const val KEY_TAGS = "tags"
+    const val KEY_PINNED = "pinned"
+    const val KEY_WHITELISTED = "whitelisted"
     const val KEY_PACKAGE = "package"
     const val KEY_FROZEN = "frozen"
     private const val SORT_BY = "sort_by"
@@ -182,14 +183,25 @@ object HailData {
 
     fun isChecked(packageName: String): Boolean = checkedList.any { it.packageName == packageName }
 
-    fun addCheckedApp(packageName: String, tagId: Int = 0, saveApps: Boolean = true) {
-        checkedList.add(AppInfo(packageName, tagIdList = mutableListOf(tagId)))
+    fun addCheckedApp(
+        packageName: String,
+        tagId: Int = 0,
+        saveApps: Boolean = true,
+        init: AppInfo.() -> Unit = {}
+    ) {
+        checkedList.add(AppInfo(packageName, tagIdList = mutableListOf(tagId)).apply(init))
         if (saveApps) saveApps()
     }
 
     fun removeCheckedApp(packageName: String, saveApps: Boolean = true) {
         checkedList.removeAll { it.packageName == packageName }
         if (saveApps) saveApps()
+    }
+
+    fun removeUninstalledApps(saveApps: Boolean = true): Boolean {
+        val removed = checkedList.removeAll { HPackages.isAppUninstalled(it.packageName) }
+        if (removed && saveApps) saveApps()
+        return removed
     }
 
     fun saveApps() {

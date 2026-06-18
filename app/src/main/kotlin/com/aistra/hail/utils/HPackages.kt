@@ -49,6 +49,12 @@ object HPackages {
         else app.packageManager.getApplicationInfo(packageName, flags)
     }.getOrNull()
 
+    fun isAppInstalled(info: ApplicationInfo): Boolean =
+        info.flags and ApplicationInfo.FLAG_INSTALLED == ApplicationInfo.FLAG_INSTALLED
+
+    fun getInstalledApplicationInfoOrNull(packageName: String): ApplicationInfo? =
+        getApplicationInfoOrNull(packageName)?.takeIf { isAppInstalled(it) }
+
     fun isAppDisabled(packageName: String): Boolean = getApplicationInfoOrNull(packageName)?.enabled?.not() ?: false
 
     fun isAppHidden(packageName: String): Boolean = getApplicationInfoOrNull(packageName)?.let {
@@ -68,16 +74,22 @@ object HPackages {
         }
     } ?: false
 
+    fun isAppUninstalled(info: ApplicationInfo): Boolean = !isAppInstalled(info)
+
     fun isAppUninstalled(packageName: String): Boolean =
-        getApplicationInfoOrNull(packageName)?.run { flags and ApplicationInfo.FLAG_INSTALLED != ApplicationInfo.FLAG_INSTALLED }
-            ?: true
+        getApplicationInfoOrNull(packageName)?.let { isAppUninstalled(it) } ?: true
 
     fun isPrivilegedApp(packageName: String): Boolean = getApplicationInfoOrNull(packageName)?.let {
         (ApplicationInfo::class.java.getField("privateFlags").get(it) as Int) and 8 == 8
     } ?: false
 
+    fun canUninstallNormally(info: ApplicationInfo): Boolean = info.sourceDir.startsWith("/data")
+
     fun canUninstallNormally(packageName: String): Boolean =
-        getApplicationInfoOrNull(packageName)?.sourceDir?.startsWith("/data") ?: false
+        getApplicationInfoOrNull(packageName)?.let { canUninstallNormally(it) } ?: false
+
+    fun shouldShowInAppsList(info: ApplicationInfo): Boolean =
+        isAppInstalled(info) || !canUninstallNormally(info)
 
     fun getLaunchComponentName(packageName: String): ComponentName? =
         app.packageManager.getLaunchIntentForPackage(packageName)?.let {

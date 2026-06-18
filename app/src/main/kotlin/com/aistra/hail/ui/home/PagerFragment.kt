@@ -65,6 +65,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.text.Collator
 import kotlin.math.roundToInt
 
@@ -286,6 +287,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         updateCurrentListJob?.cancel()
         updateCurrentListJob = viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.Default) {
+                HailData.removeUninstalledApps()
                 val apps = HailData.checkedList.toList()
                 buildCurrentList(apps, tagId, queryText, nineKeySearch, permafrost)
             }
@@ -593,7 +595,8 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     override fun onItemLongClick(info: AppInfo): Boolean {
         if (info.applicationInfo == null && (!multiselect || info !in selectedList)) {
-            exportToClipboard(listOf(info))
+            Snackbar.make(activity.fab, R.string.app_not_installed, Snackbar.LENGTH_LONG)
+                .setAction(R.string.action_remove_home) { removeCheckedApp(info.packageName) }.show()
             return true
         }
         if (info in selectedList) {
@@ -976,13 +979,30 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
 
     private fun exportToClipboard(list: List<AppInfo>) {
         if (list.isEmpty()) return
-        HUI.copyText(if (list.size > 1) JSONArray().run {
-            list.forEach { put(it.packageName) }
-            toString()
-        } else list[0].packageName)
+        val hasMetadata = list.any { it.whitelisted || it.pinned }
+        val text = when {
+            list.size == 1 && !hasMetadata -> list[0].packageName
+            !hasMetadata -> JSONArray().run {
+                list.forEach { put(it.packageName) }
+                toString()
+            }
+            else -> listToClipboardJson(list).toString()
+        }
+        HUI.copyText(text)
         HUI.showToast(
             R.string.msg_exported, if (list.size > 1) list.size.toString() else list[0].name
         )
+    }
+
+    private fun listToClipboardJson(list: List<AppInfo>) = JSONArray().run {
+        list.forEach {
+            put(JSONObject().apply {
+                put(HailData.KEY_PACKAGE, it.packageName)
+                put(HailData.KEY_PINNED, it.pinned)
+                put(HailData.KEY_WHITELISTED, it.whitelisted)
+            })
+        }
+        this
     }
 
     private fun importFromClipboard() = runCatching {
@@ -995,9 +1015,25 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         else JSONArray().put(str)
         var i = 0
         for (index in 0 until json.length()) {
-            val pkg = json.getString(index)
-            if (HPackages.getApplicationInfoOrNull(pkg) != null && !HailData.isChecked(pkg)) {
-                HailData.addCheckedApp(pkg, tag.second, false)
+            val item = json.get(index)
+            val pkg = when (item) {
+                is JSONObject -> item.optString(HailData.KEY_PACKAGE).takeIf { it.isNotBlank() }
+                else -> item?.toString()
+            } ?: continue
+            if (HPackages.getInstalledApplicationInfoOrNull(pkg) != null) {
+                val pinned = item is JSONObject && item.optBoolean(HailData.KEY_PINNED)
+                val whitelisted = item is JSONObject && item.optBoolean(HailData.KEY_WHITELISTED)
+                val existing = HailData.checkedList.firstOrNull { it.packageName == pkg }
+                when {
+                    existing == null -> HailData.addCheckedApp(pkg, tag.second, false) {
+                        this.pinned = pinned
+                        this.whitelisted = whitelisted
+                    }
+                    item is JSONObject -> {
+                        existing.pinned = pinned
+                        existing.whitelisted = whitelisted
+                    }
+                }
                 i++
             }
         }
@@ -1009,7 +1045,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     }
 
     private suspend fun importFrozenApp() = withContext(Dispatchers.IO) {
-        HPackages.getInstalledApplications().map { it.packageName }
+        HPackages.getInstalledApplications().filter { HPackages.isAppInstalled(it) }.map { it.packageName }
             .filter { AppManager.isAppFrozen(it) && !HailData.isChecked(it) }
             .onEach { HailData.addCheckedApp(it, tag.second, false) }.size
     }

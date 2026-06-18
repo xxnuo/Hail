@@ -27,7 +27,7 @@ class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
             ): Boolean = oldItem.packageName == newItem.packageName
 
             override fun areContentsTheSame(oldItem: ApplicationInfo, newItem: ApplicationInfo): Boolean =
-                oldItem.flags and ApplicationInfo.FLAG_INSTALLED == newItem.flags and ApplicationInfo.FLAG_INSTALLED
+                HPackages.isAppInstalled(oldItem) == HPackages.isAppInstalled(newItem)
         }
     }
 
@@ -112,7 +112,7 @@ class AppsAdapter : ListAdapter<ApplicationInfo, AppsAdapter.ViewHolder>(DIFF) {
                 val name = info.loadLabel(context.packageManager)
                 text = if (!HailData.grayscaleIcon && frozen) "❄️$name" else name
                 isEnabled = !HailData.grayscaleIcon || !frozen
-                if (HPackages.isAppUninstalled(pkg)) setTextColor(
+                if (HPackages.isAppUninstalled(info)) setTextColor(
                     MaterialColors.getColor(
                         this, androidx.appcompat.R.attr.colorError
                     )

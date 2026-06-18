@@ -104,6 +104,7 @@ object AppStateCache : CoroutineScope {
 
     private fun resolveState(packageName: String): AppInfo.State {
         val info = HPackages.getApplicationInfoOrNull(packageName) ?: return AppInfo.State.NOT_FOUND
+        if (HPackages.isAppUninstalled(info)) return AppInfo.State.NOT_FOUND
         return if (isFrozen(info)) AppInfo.State.FROZEN else AppInfo.State.UNFROZEN
     }
 

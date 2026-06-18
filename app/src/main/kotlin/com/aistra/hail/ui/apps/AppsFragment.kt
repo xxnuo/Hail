@@ -46,6 +46,7 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
     private val isAppsChanged get() = model.apps.value.hashCode() != lastAppsHash
     private val isQueryChanged get() = model.query.value != lastQuery
     private var contextMenuInfo: ContextMenu.ContextMenuInfo? = null
+    private var pendingUninstallPkg: String? = null
 
 
     private var exportApkPkg: String? = null
@@ -141,6 +142,9 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
         val viewHolder = ((menuInfo as HRecyclerView.RecyclerViewContextMenuInfo).viewHolder as AppsAdapter.ViewHolder)
         menu.setHeaderTitle(viewHolder.info.loadLabel(activity.packageManager))
         activity.menuInflater.inflate(R.menu.menu_apps_action, menu)
+        val uninstalled = HPackages.isAppUninstalled(viewHolder.info)
+        menu.findItem(R.id.action_uninstall).isVisible = !uninstalled
+        menu.findItem(R.id.action_reinstall).isVisible = uninstalled
         super.onCreateContextMenu(menu, v, menuInfo)
     }
 
@@ -190,7 +194,11 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
                 }
             }
 
-            HailData.workingMode == HailData.MODE_DEFAULT -> AppManager.uninstallApp(pkg)
+            HailData.workingMode == HailData.MODE_DEFAULT -> {
+                AppManager.uninstallApp(pkg)
+                pendingUninstallPkg = pkg
+            }
+
             else -> showUninstallDialog(name, pkg)
         }
     }
@@ -198,14 +206,15 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
     private fun showUninstallDialog(name: CharSequence, pkg: String) {
         MaterialAlertDialogBuilder(activity).setTitle(name).setMessage(R.string.msg_uninstall)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                if (AppManager.uninstallApp(pkg)) updateAppList()
+                if (AppManager.uninstallApp(pkg)) onAppUninstalled(pkg)
             }.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     override fun onItemCheckedChange(
         buttonView: CompoundButton, isChecked: Boolean, packageName: String
     ) {
-        if (isChecked) HailData.addCheckedApp(packageName)
+        if (isChecked && HPackages.isAppUninstalled(packageName)) HUI.showToast(R.string.app_not_installed)
+        else if (isChecked) HailData.addCheckedApp(packageName)
         else HailData.removeCheckedApp(packageName)
         buttonView.isChecked = HailData.isChecked(packageName)
     }
@@ -291,6 +300,20 @@ class AppsFragment : MainFragment(), AppsAdapter.OnItemClickListener, AppsAdapte
 
     private fun updateAppList() = model.updateAppList()
     private fun updateDisplayAppList() = model.updateDisplayAppList()
+
+    override fun onResume() {
+        super.onResume()
+        val pkg = pendingUninstallPkg ?: return
+        pendingUninstallPkg = null
+        if (HPackages.isAppUninstalled(pkg)) onAppUninstalled(pkg) else updateAppList()
+    }
+
+    private fun onAppUninstalled(pkg: String) {
+        HailData.removeCheckedApp(pkg)
+        AppStateCache.refresh(pkg)
+        app.setAutoFreezeService()
+        updateAppList()
+    }
 
     override fun onDestroy() {
         appsAdapter.onDestroy()

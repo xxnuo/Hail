@@ -60,7 +60,9 @@ class AppsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             postRefreshState(true)
             val installedApps = withContext(Dispatchers.IO) {
-                HPackages.getInstalledApplications().also {
+                HPackages.getInstalledApplications().filter {
+                    HPackages.shouldShowInAppsList(it)
+                }.also {
                     AppStateCache.refresh(it.map { info -> info.packageName })
                 }
             }
