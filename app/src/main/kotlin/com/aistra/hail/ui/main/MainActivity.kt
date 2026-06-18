@@ -83,6 +83,8 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         homeSearchIcon = appBarMain.homeSearchIcon
         homeSearchInput = appBarMain.homeSearchInput
         homeSearchClear = appBarMain.homeSearchClear
+        appbar.isLiftOnScroll = false
+        appbar.isLifted = false
         t9Keyboard.applyDefaultInsetter { marginRelative(isRtl, bottom = true) }
 
         val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
