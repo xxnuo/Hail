@@ -68,6 +68,9 @@ android {
         // Do not compress the dex files, so the apk can be imported as a privileged app
         noCompress += "dex"
     }
+    lint {
+        disable += "MissingTranslation"
+    }
     buildFeatures {
         viewBinding = true
         buildConfig = true

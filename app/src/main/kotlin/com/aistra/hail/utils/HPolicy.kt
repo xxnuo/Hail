@@ -58,7 +58,7 @@ object HPolicy {
 
     @Suppress("DEPRECATION")
     fun removeProfileOwner() {
-        if (isProfileOwner) dpm.clearProfileOwner(admin)
+        if (isProfileOwner && HTarget.N) dpm.clearProfileOwner(admin)
     }
 
     @Suppress("DEPRECATION")

@@ -115,8 +115,8 @@ class PagerAdapter(
         val name = entry.name
         holder.name = name
         flags[info.packageName] = info.getFlag(selectedList, state)
-            holder.itemView.run {
-                alpha = activeLetter?.let {
+        holder.itemView.run {
+            alpha = activeLetter?.let {
                 if (entry.matchesActiveLetter(it)) 1f else 0.28f
             } ?: 1f
             setOnClickListener { onItemClickListener.onItemClick(info) }
@@ -222,7 +222,7 @@ class PagerAdapter(
             if (letter != currentLetter) {
                 currentLetter = letter
                 if (letter != null) {
-                    positions.putIfAbsent(letter, items.size)
+                    if (!positions.containsKey(letter)) positions[letter] = items.size
                     items.add(Item.Header(letter))
                     spanCursor = 0
                 }

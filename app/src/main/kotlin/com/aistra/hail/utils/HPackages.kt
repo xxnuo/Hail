@@ -2,6 +2,7 @@ package com.aistra.hail.utils
 
 import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -21,12 +22,14 @@ object HPackages {
         packageName, PackageManager.PackageInfoFlags.of(PackageManager.MATCH_UNINSTALLED_PACKAGES.toLong())
     ) else app.packageManager.getPackageUid(packageName, PackageManager.MATCH_UNINSTALLED_PACKAGES)
 
+    @SuppressLint("WrongConstant")
     fun getInstalledApplications(flags: Int = if (HTarget.N) PackageManager.MATCH_UNINSTALLED_PACKAGES else 8192): List<ApplicationInfo> =
         if (HTarget.T) app.packageManager.getInstalledApplications(
             PackageManager.ApplicationInfoFlags.of(flags.toLong())
         )
         else app.packageManager.getInstalledApplications(flags)
 
+    @SuppressLint("WrongConstant")
     fun getUnhiddenPackageInfoOrNull(
         packageName: String, flags: Int = if (HTarget.N) PackageManager.MATCH_UNINSTALLED_PACKAGES else 8192
     ) = runCatching {
@@ -36,6 +39,7 @@ object HPackages {
         else app.packageManager.getPackageInfo(packageName, flags)
     }.getOrNull()
 
+    @SuppressLint("WrongConstant")
     fun getApplicationInfoOrNull(
         packageName: String, flags: Int = if (HTarget.N) PackageManager.MATCH_UNINSTALLED_PACKAGES else 8192
     ) = runCatching {
