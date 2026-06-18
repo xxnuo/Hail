@@ -80,7 +80,6 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private var searchTextWatcher: TextWatcher? = null
     private var searchBackCallback: OnBackPressedCallback? = null
     private var homeMenu: Menu? = null
-    private var homeSearchDefaultMarginEnd: Int? = null
     private var updateCurrentListJob: Job? = null
     private var updateCurrentListGeneration = 0
     private var multiselect: Boolean
@@ -1047,22 +1046,12 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         updateHomeSearchMode(searchInput)
         activity.homeSearchIcon.setOnClickListener { focusHomeSearch(searchInput) }
         activity.homeSearchBar.setOnClickListener { focusHomeSearch(searchInput) }
-        setupT9EditText(searchInput, binding.recyclerView)
-        setupSearchBackCallback()
-        searchInput.setOnTouchListener { _, event ->
-            if (event.action != MotionEvent.ACTION_UP || query.isEmpty()) return@setOnTouchListener false
-            val drawable = searchInput.compoundDrawablesRelative[2] ?: return@setOnTouchListener false
-            val drawableWidth = drawable.intrinsicWidth.coerceAtLeast(0)
-            val hitClear = if (searchInput.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
-                event.x <= searchInput.paddingLeft + drawableWidth + searchInput.compoundDrawablePadding
-            } else {
-                event.x >= searchInput.width - searchInput.paddingRight - drawableWidth - searchInput.compoundDrawablePadding
-            }
-            if (!hitClear) return@setOnTouchListener false
+        activity.homeSearchClear.setOnClickListener {
             clearHomeSearch()
             focusHomeSearch(searchInput)
-            true
         }
+        setupT9EditText(searchInput, binding.recyclerView)
+        setupSearchBackCallback()
         searchTextWatcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
@@ -1135,13 +1124,11 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
     private fun updateHomeSearchMode(searchInput: EditText) {
         updateHomeSearchClear(searchInput)
         updateHomeSearchActions()
-        updateHomeSearchMargin()
     }
 
     private fun updateHomeSearchClear(searchInput: EditText) {
-        val icon = if (query.isEmpty()) 0 else R.drawable.ic_outline_close
-        searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, icon, 0)
-        searchInput.compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.padding_small)
+        searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+        activity.homeSearchClear.isVisible = query.isNotEmpty()
         searchBackCallback?.isEnabled = query.isNotEmpty()
     }
 
@@ -1152,17 +1139,6 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                 menu.getItem(index).isVisible = showActions
             }
         }
-    }
-
-    private fun updateHomeSearchMargin() {
-        val params = activity.homeSearchBar.layoutParams as? ViewGroup.MarginLayoutParams ?: return
-        val defaultMarginEnd = homeSearchDefaultMarginEnd ?: params.marginEnd.also {
-            homeSearchDefaultMarginEnd = it
-        }
-        val marginEnd = if (query.isEmpty()) defaultMarginEnd else 0
-        if (params.marginEnd == marginEnd) return
-        params.marginEnd = marginEnd
-        activity.homeSearchBar.layoutParams = params
     }
 
     private fun clearHomeSearchFocus() {

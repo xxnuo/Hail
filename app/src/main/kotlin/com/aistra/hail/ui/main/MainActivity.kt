@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
     lateinit var homeSearchBar: View
     lateinit var homeSearchIcon: ImageView
     lateinit var homeSearchInput: EditText
+    lateinit var homeSearchClear: ImageButton
     private lateinit var navController: NavController
     private lateinit var appBarConfiguration: AppBarConfiguration
 
@@ -80,6 +82,7 @@ class MainActivity : AppCompatActivity(), NavController.OnDestinationChangedList
         homeSearchBar = appBarMain.homeSearchBar
         homeSearchIcon = appBarMain.homeSearchIcon
         homeSearchInput = appBarMain.homeSearchInput
+        homeSearchClear = appBarMain.homeSearchClear
         t9Keyboard.applyDefaultInsetter { marginRelative(isRtl, bottom = true) }
 
         val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment

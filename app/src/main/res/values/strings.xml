@@ -38,6 +38,7 @@
     <string name="action_undo">Undo</string>
     <string name="action_help">Help</string>
     <string name="action_search">Search</string>
+    <string name="action_clear_search">Clear search</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_details">App info</string>
     <string name="action_extract_apk">Extract APK</string>

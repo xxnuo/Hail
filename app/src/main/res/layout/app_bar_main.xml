@@ -10,6 +10,7 @@
         android:id="@+id/app_bar_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?android:attr/colorBackground"
         android:theme="@style/Theme.Hail.AppBarOverlay">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -24,7 +25,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_gravity="start|center_vertical"
-                android:layout_marginEnd="96dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:visibility="gone"
@@ -56,6 +56,20 @@
                     android:textColor="?android:textColorPrimary"
                     android:textColorHint="?android:textColorSecondary"
                     android:textSize="20sp" />
+
+                <ImageButton
+                    android:id="@+id/home_search_clear"
+                    android:layout_width="?actionBarSize"
+                    android:layout_height="match_parent"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/action_clear_search"
+                    android:paddingStart="@dimen/padding_medium"
+                    android:paddingEnd="@dimen/padding_medium"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_outline_close"
+                    android:visibility="gone"
+                    app:tint="?attr/colorOnSurface"
+                    tools:visibility="visible" />
 
             </LinearLayout>
 
