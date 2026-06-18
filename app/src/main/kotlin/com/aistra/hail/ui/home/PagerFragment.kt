@@ -356,6 +356,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         val position = if (letter == '#') pagerAdapter.firstUnletteredAppPosition() else fastScrollPositions[letter]
         if (position == null || position == RecyclerView.NO_POSITION) return
         pagerAdapter.setActiveLetter(letter)
+        binding.recyclerView.stopScroll()
         (binding.recyclerView.layoutManager as? GridLayoutManager)?.scrollToPositionWithOffset(position, 0)
         activity.fab.hide()
     }
@@ -374,6 +375,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
         val maxOffset = (recyclerView.height - recyclerView.paddingBottom - sectionHeight).coerceAtLeast(minOffset)
         val offset = (anchorY - sectionHeight).coerceIn(minOffset, maxOffset)
         pagerAdapter.setActiveLetter(letter)
+        recyclerView.stopScroll()
         layoutManager.scrollToPositionWithOffset(headerPosition + 1, offset)
         activity.fab.hide()
     }
