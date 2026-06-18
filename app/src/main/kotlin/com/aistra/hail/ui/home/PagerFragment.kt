@@ -720,6 +720,7 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
             intArrayOf(
                 R.string.action_freeze,
                 R.string.action_unfreeze,
+                R.string.action_whitelist,
                 R.string.action_tag_set,
                 R.string.action_export_clipboard,
                 R.string.action_remove_home,
@@ -735,20 +736,26 @@ class PagerFragment : MainFragment(), PagerAdapter.OnItemClickListener, PagerAda
                     setListFrozen(false, selectedList, updateList = false) { deselect() }
                 }
 
-                2 -> triStateTagDialog()
+                2 -> {
+                    selectedList.forEach { it.whitelisted = true }
+                    HailData.saveApps()
+                    deselect()
+                }
 
-                3 -> {
+                3 -> triStateTagDialog()
+
+                4 -> {
                     exportToClipboard(selectedList)
                     deselect()
                 }
 
-                4 -> {
+                5 -> {
                     selectedList.forEach { removeCheckedApp(it.packageName, false) }
                     HailData.saveApps()
                     deselect()
                 }
 
-                5 -> {
+                6 -> {
                     val selected = selectedList.toList()
                     setListFrozen(false, selected, updateList = false) {
                         selected.forEach {
